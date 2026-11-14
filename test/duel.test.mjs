@@ -47,7 +47,7 @@ test('uses the last locked frames, supports guesses and custom names, and scores
     assert.equal(duel.lock(0, first, 1), true);
     assert.equal(duel.lock(0, final, 1), true);
     assert.equal(duel.lock(1, other, 1), true);
-    mock.timers.tick(20_000);
+    mock.timers.tick(HUNT_DURATION_MS);
     await settle();
     assert.equal(duel.lock(0, first, 1), false);
     assert.deepEqual(duel.state(0).guesses, ['accordion', 'concertina', 'keyboard']);
@@ -68,7 +68,7 @@ test('uses the last locked frames, supports guesses and custom names, and scores
 
 test('both missed locks tie at zero and a camera drop voids the rematch', async ({ mock }) => {
   const duel = start(mock);
-  mock.timers.tick(20_000);
+  mock.timers.tick(HUNT_DURATION_MS);
   await settle();
   assert.deepEqual(duel.results.map(result => result.points), [0, 0]);
   duel.ready(0, false);

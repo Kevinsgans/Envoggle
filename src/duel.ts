@@ -10,6 +10,7 @@ type Phase = 'lobby' | 'hunt' | 'confirm' | 'scoring' | 'result' | 'void';
 const empty = (): [Entry, Entry] => [{ done: false }, { done: false }];
 const blank = (): Player => ({ token: randomUUID(), ready: false, retain: false });
 
+export const HUNT_DURATION_MS = 60_000;
 export class Duel {
   readonly players = [blank(), blank()];
   accepted = false;
@@ -44,9 +45,9 @@ export class Duel {
     this.results = undefined;
     this.message = '';
     this.phase = 'hunt';
-    this.deadline = Date.now() + 20_000;
+    this.deadline = Date.now() + HUNT_DURATION_MS;
     this.players.forEach(player => { player.ready = false; });
-    this.timer = setTimeout(() => void this.finish(), 20_000);
+    this.timer = setTimeout(() => void this.finish(), HUNT_DURATION_MS);
   }
 
   lock(slot: number, frame: Buffer, round: number, receivedAt = Date.now()) {
