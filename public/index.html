@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Envoggle</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header><h1>Envoggle</h1><span id="clock"></span></header>
+    <p id="status" role="status" aria-live="polite">Challenge a friend to a live scavenger hunt.</p>
+    <p id="error" role="alert" hidden></p>
+    <section id="lobby">
+      <button id="create">Create challenge</button>
+      <button id="accept" hidden>Accept challenge</button>
+      <button id="share" hidden>Copy invite link</button>
+      <button id="camera" hidden>Reconnect camera</button>
+    </section>
+    <section id="arena" hidden>
+      <h2 id="prompt">Things that are blue</h2>
+      <div class="feeds">
+        <figure><div class="feed" id="local"></div><figcaption id="localLabel">You</figcaption></figure>
+        <figure><div class="feed" id="remote"></div><figcaption id="remoteLabel">Opponent</figcaption></figure>
+      </div>
+      <div id="controls">
+        <label id="consent"><input id="retain" type="checkbox"> Save my confirmed image and label for vision-model training. Envoggle may license or sell them to third parties.</label>
+        <button id="ready">Ready</button>
+        <button id="lock" hidden>Lock it in</button>
+      </div>
+      <section id="choices" aria-label="Confirm your item"></section>
+      <section id="results" aria-live="polite"></section>
+    </section>
+  </main>
+</body>
+</html>
