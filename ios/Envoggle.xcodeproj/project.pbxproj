@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		827B5C9570B84C32B1F47950 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 827B5C9570B84C32B1F47951 /* Assets.xcassets */; };
 		43DF0EEDF2248A43896CB8ED /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 490EE6E56C904B33385E162B /* Foundation.framework */; };
 		5AD861769287A08DEF64C89C /* MessagesViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA9BDE3FEC0DBD615305EDAB /* MessagesViewController.swift */; };
 		BC3A7527464390929C08B0DD /* EnvoggleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCC6C5A608AFC2B6896AA704 /* EnvoggleApp.swift */; };
@@ -39,6 +40,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		827B5C9570B84C32B1F47951 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		490EE6E56C904B33385E162B /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		76559F5EF3A790C01DB535B5 /* Envoggle.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Envoggle.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA9BDE3FEC0DBD615305EDAB /* MessagesViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MessagesViewController.swift; sourceTree = "<group>"; };
@@ -107,6 +109,7 @@
 		FD571F99DE887F93BB394004 /* Host */ = {
 			isa = PBXGroup;
 			children = (
+				827B5C9570B84C32B1F47951 /* Assets.xcassets */,
 				BCC6C5A608AFC2B6896AA704 /* EnvoggleApp.swift */,
 			);
 			name = Host;
@@ -199,6 +202,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				827B5C9570B84C32B1F47950 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -326,7 +330,6 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -346,7 +349,6 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
