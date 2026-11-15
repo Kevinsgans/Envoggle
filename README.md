@@ -14,6 +14,8 @@ npm start
 
 Open `http://localhost:3000` on the development machine. For two phones, serve the same app over HTTPS so their browsers can access the cameras. Create a challenge, send its URL through Messages, then use both devices to accept, ready up, and lock in a find. The MVP ships with one category, **Things that are blue**. Use `npm run draft-dictionary -- "Things that are blue"` to print an AI draft. Review the names, aliases, and tiers (common, uncommon, rare, super rare, ultra rare) before applying approved entries to `src/categories.ts`.
 
+When scoring finishes, the browser arena uses the model's best-item box to crop the find, then runs the MIT-licensed BEN2 background-removal model locally on the server to produce a transparent PNG cutout. The ONNX model downloads from Hugging Face the first time a cutout is requested and is cached by Transformers.js. Segmentation failure falls back to the object crop. The green scan animation plays over the locked photo while scoring runs.
+
 Rooms are kept in memory for up to two hours, including the current round and the most recent result frames. Use a single server instance for the demo. Restarting the server ends active rooms.
 
 ## Set up the iMessage invite

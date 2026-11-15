@@ -24,6 +24,10 @@
         <figure><div class="feed" id="local"></div><figcaption id="localLabel">You</figcaption></figure>
         <figure><div class="feed" id="remote"></div><figcaption id="remoteLabel">Opponent</figcaption></figure>
       </div>
+      <section id="scan-stage" class="scan-stage" hidden aria-live="polite">
+        <div class="scan-visual"><img id="scan-photo" alt="Your locked photo"><span class="scan-band" aria-hidden="true"></span></div>
+        <p id="scan-label">Scanning your find…</p>
+      </section>
       <div id="controls">
         <label id="consent"><input id="retain" type="checkbox"> Save my confirmed image and label for vision-model training. Envoggle may license or sell them to third parties.</label>
         <button id="ready">Ready</button>

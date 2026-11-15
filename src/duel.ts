@@ -2,14 +2,31 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { blue } from './categories.js';
 import { judgeFind, type Result } from './judge.js';
+import sharp from 'sharp';
 
-type Entry = { frame?: Buffer; lockedAt?: number; guesses?: string[]; options?: boolean; label?: string; done: boolean };
+type Entry = { frame?: Buffer; object?: Promise<Buffer>; lockedAt?: number; guesses?: string[]; options?: boolean; label?: string; done: boolean };
 type Player = { token: string; ready: boolean; retain: boolean };
 type Phase = 'lobby' | 'hunt' | 'confirm' | 'scoring' | 'result' | 'void';
 const empty = (): [Entry, Entry] => [{ done: false }, { done: false }];
 const blank = (): Player => ({ token: randomUUID(), ready: false, retain: false });
 
 export const HUNT_DURATION_MS = 30_000;
+let backgroundRemoval: Promise<any> | undefined;
+
+async function segmentObject(image: Buffer) {
+  backgroundRemoval ??= import('@huggingface/transformers').then(({ pipeline }) =>
+    pipeline('background-removal', 'onnx-community/BEN2-ONNX'));
+  const { RawImage } = await import('@huggingface/transformers');
+  const decoded = await sharp(image).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const input = new RawImage(new Uint8Array(decoded.data), decoded.info.width, decoded.info.height, decoded.info.channels as 3);
+  const pipeline = await backgroundRemoval;
+  const masks = await pipeline([input]);
+  const mask = masks?.[0];
+  if (!mask?.data || !mask.width || !mask.height) throw new Error('Segmentation returned no mask');
+  const alpha = await sharp(Buffer.from(mask.data), { raw: { width: mask.width, height: mask.height, channels: mask.channels } })
+    .greyscale().resize(decoded.info.width, decoded.info.height).raw().toBuffer();
+  return sharp(image).ensureAlpha().joinChannel(alpha, { raw: { width: decoded.info.width, height: decoded.info.height, channels: 1 } }).png().toBuffer();
+}
 export class Duel {
   readonly players = [blank(), blank()];
   accepted = false;
@@ -119,6 +136,35 @@ export class Duel {
 
   frame(slot: number) {
     return this.phase === 'result' ? this.entries[slot]?.frame : undefined;
+  }
+
+  async objectFrame(slot: number) {
+    const entry = this.entries[slot];
+    const frame = this.frame(slot);
+    const box = this.results?.[slot]?.box;
+    if (!frame) return undefined;
+    if (!box) return frame;
+    if (entry.object) return entry.object;
+    const meta = await sharp(frame).metadata();
+    if (!meta.width || !meta.height) return frame;
+    const [left, top, right, bottom] = box;
+    const marginX = (right - left) * .12;
+    const marginY = (bottom - top) * .12;
+    const x = Math.max(0, Math.floor((left - marginX) * meta.width));
+    const y = Math.max(0, Math.floor((top - marginY) * meta.height));
+    const endX = Math.min(1, right + marginX) * meta.width;
+    const endY = Math.min(1, bottom + marginY) * meta.height;
+    const width = Math.max(1, Math.min(meta.width - x, Math.ceil(endX - x)));
+    const height = Math.max(1, Math.min(meta.height - y, Math.ceil(endY - y)));
+    const crop = await sharp(frame).extract({ left: x, top: y, width, height }).resize({ width: 640, height: 640, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 90 }).toBuffer();
+    entry.object = (async () => {
+      try { return await segmentObject(crop); }
+      catch (error) {
+        console.warn('[envoggle] Object segmentation unavailable; showing the object crop.', error instanceof Error ? error.message : '');
+        return crop;
+      }
+    })();
+    return entry.object;
   }
 
   private async retain(frame: Buffer, label: string) {
