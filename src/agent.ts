@@ -35,7 +35,7 @@ const matchers = [1, 2].map(number => ({
 // Without CHERT_PLAYER_* settings, each remote participant becomes the next free player slot.
 const autoAssign = !matchers.some(matcher => matcher.identity || matcher.audio || matcher.video);
 // Words the players say to the referee, to bias Gemini transcription.
-const vocabulary = ['Envoggle', 'start', 'continue', 'start and save my frame', 'rematch', 'skip', 'my name is'];
+const vocabulary = ['Envoggle', 'start', 'start and save my frame', 'skip', 'my name is'];
 // Lock both players this long before the server's deadline, which rejects later locks.
 const captureLead = 900;
 
@@ -43,6 +43,9 @@ const tileWidth = TILE_WIDTH;
 const tileHeight = TILE_HEIGHT;
 // How long the last round's reveal shows before the final scores screen.
 const FINAL_AFTER_MS = 12_000;
+// No "continue": the next round starts on its own this long after a reveal (or a void round).
+const NEXT_ROUND_MS = 10_000;
+const REPLAY_MS = 5_000;
 
 // Names vs ordinary words, from the macOS dictionaries: a word counts as a name if it is a listed
 // first name or not an ordinary lowercase word at all.
@@ -110,6 +113,7 @@ export default defineAgent({
     let states: State[] = [];
     let caption = 'Waiting for two player feeds';
     let spokenCaption = '';
+    let autoAdvance = '';
     let lastImageKey = '';
     let finalShown: { id: string; at: number } | undefined;
     let syncedAt = 0;
@@ -329,8 +333,8 @@ export default defineAgent({
       if (!code) return;
       const first = states[0];
       if (!first) return;
-      // Either player starts the round (or a rematch) for both.
-      if (/\b(start|ready|rematch|continue|next)\b/.test(words) && ['lobby', 'result', 'void'].includes(first.phase) && readyMedia()) {
+      // "Start" is only for the opt-in lobby; rounds after the first start on their own.
+      if (/\b(start|ready)\b/.test(words) && first.phase === 'lobby' && readyMedia()) {
         const retain = !split() && words.includes('save my frame');
         for (const player of slots) if (!first.ready[player]) await api(player, 'ready', { retain: retain && player === slot });
         return;
@@ -476,7 +480,7 @@ export default defineAgent({
         return { kind: 'reveal', names: players, prompt: first.prompt, results: first.results, photos, finds, last: true };
       }
       if (first.results) return { kind: 'reveal', names: players, prompt: first.prompt, results: first.results, photos, finds };
-      if (first.phase === 'void') return { kind: 'message', title: 'Round void', detail: `${first.message} Say “start” to try again.` };
+      if (first.phase === 'void') return { kind: 'message', title: 'Round void', detail: `${first.message} Replaying in a few seconds.` };
       return { kind: 'ready', names: players, prompt: first.prompt };
     }
 
@@ -565,8 +569,21 @@ export default defineAgent({
                 captureTimer = setTimeout(() => void captureAll(first.round), Math.max(0, first.deadline - first.serverTime - captureLead));
               }
             }
-            caption = ['confirm', 'scoring'].includes(first.phase) ? 'Scoring both finds' : 'Say “start” to play';
+            caption = ['confirm', 'scoring'].includes(first.phase) ? 'Scoring both finds' : 'Next round soon';
             if (first.phase === 'void') announcement = first.message;
+            // Advance without a voice command: next round after a reveal, replay after a void round.
+            const advance = first.phase === 'void' || (first.phase === 'result' && !first.completed);
+            const advanceId = `${code}:${first.round}:${first.phase}`;
+            if (advance && advanceId !== autoAdvance) {
+              autoAdvance = advanceId;
+              const roundCode = code;
+              setTimeout(() => {
+                const now = states[0];
+                if (output.signal.aborted || code !== roundCode || !now || `${code}:${now.round}:${now.phase}` !== advanceId || !readyMedia()) return;
+                void Promise.all(slots.map(player => now.ready[player] ? undefined : api(player, 'ready', { retain: false })))
+                  .catch(() => console.warn('[envoggle] Could not start the next round'));
+              }, first.phase === 'void' ? REPLAY_MS : NEXT_ROUND_MS);
+            }
             const identifier = `${first.round}:${first.phase}:${announcement}`;
             if (announcement && identifier !== spokenCaption) {
               spokenCaption = identifier;

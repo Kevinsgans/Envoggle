@@ -157,7 +157,7 @@ function findCards(view: Extract<View, { kind: 'scoring' | 'reveal' }>) {
   return stack([
     { height: 112, draw: top => text(view.prompt.toUpperCase(), TILE_WIDTH / 2, top, 22, { weight: 700, fill: muted, spacing: 4 }) + text(headline, TILE_WIDTH / 2, top + 36, 76, { weight: 800, fill: winner < 0 ? ink : COLORS[winner] }) },
     cards,
-    { height: 30, draw: top => results ? text(view.kind === 'reveal' && view.last ? 'Final scores next' : 'Say “continue” for the next round', TILE_WIDTH / 2, top, 28, { fill: muted }) : '' },
+    { height: 30, draw: top => results ? text(view.kind === 'reveal' && view.last ? 'Final scores next' : 'Next round in a few seconds', TILE_WIDTH / 2, top, 28, { fill: muted }) : '' },
   ], 26);
 }
 
