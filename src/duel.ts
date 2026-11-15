@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { blue, findItem } from './categories.js';
+import { blue } from './categories.js';
 import { identify, score } from './judge.js';
 
 type Entry = { frame?: Buffer; lockedAt?: number; guesses?: string[]; options?: boolean; label?: string; done: boolean };
@@ -79,17 +79,13 @@ export class Duel {
           entry.done = true;
           return;
         }
+        // No confirmation step: Gemini's top guess is scored against the same frame.
         entry.guesses = await identify(entry.frame);
-        entry.options = !findItem(entry.guesses[0] ?? '');
-        if (!entry.guesses.length) entry.done = true;
+        entry.label = entry.guesses[0];
+        entry.done = true;
       }));
       if (this.entries !== entries || this.phase !== 'confirm') return;
-      if (entries.every(entry => entry.done)) void this.reveal();
-      else this.timer = setTimeout(() => {
-        if (this.entries !== entries || this.phase !== 'confirm') return;
-        entries.forEach(entry => { entry.done = true; });
-        void this.reveal();
-      }, 45_000);
+      void this.reveal();
     } catch (error) {
       console.error('[envoggle] Identification failed', error instanceof Error ? error.message : '');
       if (this.entries === entries) this.void('The referee could not identify the finds. Try a rematch.');

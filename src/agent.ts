@@ -23,7 +23,7 @@ const matchers = [1, 2].map(number => ({
 // Without CHERT_PLAYER_* settings, each remote participant becomes the next free player slot.
 const autoAssign = !matchers.some(matcher => matcher.identity || matcher.audio || matcher.video);
 // Words the players say to the referee, to bias Gemini transcription.
-const vocabulary = ['Envoggle', 'start', 'start and save my frame', 'rematch', 'yes', 'no', 'none of these', 'my item is'];
+const vocabulary = ['Envoggle', 'start', 'start and save my frame', 'rematch'];
 // In a Group FaceTime call, Chert (beta.21) sends one capture of its FaceTime window with player 1
 // in the left tile and player 2 in the right tile. Tile edges as fractions of that window frame.
 const tiles = [
@@ -90,7 +90,6 @@ export default defineAgent({
     let lastCountdown = '';
     let creating = false;
     let lastCreate = 0;
-    let confirmationSlot: number | undefined;
     let layoutSeen = 0;
     let layoutChecked = 0;
     let capturedRound = -1;
@@ -203,8 +202,7 @@ export default defineAgent({
     }
 
     async function command(slot: number, transcript: string) {
-      const raw = transcript.trim().replace(/[.!?]+$/, '');
-      const words = raw.toLowerCase().replace(/[’']/g, '');
+      const words = transcript.trim().replace(/[.!?]+$/, '').toLowerCase().replace(/[’']/g, '');
       if (!code) return;
       const first = states[0];
       if (!first) return;
@@ -213,19 +211,6 @@ export default defineAgent({
         const retain = !split() && words.includes('save my frame');
         for (const player of slots) if (!first.ready[player]) await api(player, 'ready', { retain: retain && player === slot });
         return;
-      }
-      // Mixed call audio cannot tell the players apart, so in split mode answers go to the player being asked.
-      const answering = split() ? confirmationSlot : slot;
-      const state = answering === undefined ? undefined : states[answering];
-      if (answering !== undefined && state?.phase === 'confirm' && confirmationSlot === answering && state.guesses?.length && !state.confirmed) {
-        if (!state.options && /^(yes|correct|thats right)$/.test(words)) await api(answering, 'confirm', { action: 'accept' });
-        else if (!state.options && /^(no|incorrect)$/.test(words)) await api(answering, 'confirm', { action: 'reject' });
-        else if (state.options) {
-          const index = ['one', 'two', 'three'].indexOf(words.replace(/^option\s+/, '').replace(/^1$/, 'one').replace(/^2$/, 'two').replace(/^3$/, 'three'));
-          if (index >= 0 && state.guesses[index]) await api(answering, 'confirm', { action: 'choose', value: state.guesses[index] });
-          else if (words === 'none of these') say(`Player ${answering + 1}, say "my item is" and name it.`);
-          else if (words.startsWith('my item is ')) await api(answering, 'confirm', { action: 'custom', value: raw.slice(11) });
-        }
       }
     }
 
@@ -400,7 +385,6 @@ export default defineAgent({
             const [first] = next;
             if (first.phase === 'hunt' && !readyMedia()) await api(0, 'drop', {});
             let announcement = '';
-            confirmationSlot = undefined;
             if (first.phase === 'hunt') {
               announcement = `${first.prompt}. Find the rarest thing you can and hold it up when time runs out. Go!`;
               if (capturedRound !== first.round) {
@@ -409,17 +393,7 @@ export default defineAgent({
                 captureTimer = setTimeout(() => void captureAll(first.round), Math.max(0, first.deadline - first.serverTime - captureLead));
               }
             }
-            if (first.phase === 'confirm') {
-              const player = next.find(state => !state.confirmed && state.guesses?.length);
-              if (player?.guesses) {
-                confirmationSlot = player.slot;
-                caption = `Player ${player.slot + 1}: confirm your item`;
-                const choices = player.guesses.map((guess, index) => `${index + 1}, ${guess}`).join('. ');
-                announcement = player.options
-                  ? `Player ${player.slot + 1}. Is it ${choices}? Say the number, or say none of these.`
-                  : `Player ${player.slot + 1}, is your item a ${player.guesses[0]}? Say yes or no.`;
-              }
-            } else caption = first.phase === 'scoring' ? 'Scoring both finds' : 'Say “start” to play';
+            caption = ['confirm', 'scoring'].includes(first.phase) ? 'Scoring both finds' : 'Say “start” to play';
             if (first.results) {
               const [a, b] = first.results;
               announcement = `Player one: ${a.label}, ${a.points} points. ${a.reason} Player two: ${b.label}, ${b.points} points. ${b.reason} ${a.points === b.points ? 'A draw.' : `Player ${a.points > b.points ? 'one' : 'two'} wins.`}`;
