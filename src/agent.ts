@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import sharp from 'sharp';
 import type { Duel } from './duel.js';
+import { findTiles, type Tile } from './layout.js';
 import { DEFAULT_NAMES, TILE_HEIGHT, TILE_WIDTH, renderTile, type View } from './tile.js';
 
 type State = ReturnType<Duel['state']>;
@@ -30,36 +31,6 @@ const matchers = [1, 2].map(number => ({
 const autoAssign = !matchers.some(matcher => matcher.identity || matcher.audio || matcher.video);
 // Words the players say to the referee, to bias Gemini transcription.
 const vocabulary = ['Envoggle', 'start', 'start and save my frame', 'rematch', 'skip', 'my name is'];
-// In a Group FaceTime call, Chert (beta.21) sends one capture of its FaceTime window with player 1
-// in the left tile and player 2 in the right tile. The window size varies, so the tiles are found
-// in each checked frame: the widest band of lit rows, split into exactly two similar lit column spans.
-type Tile = { left: number; right: number; top: number; bottom: number };
-function findTiles(data: Buffer, width: number, height: number, channels: number): Tile[] | undefined {
-  const lit = (x: number, y: number) => data[(y * width + x) * channels] > 8;
-  const runs = (values: number[], test: (value: number) => boolean, min: number) => {
-    const found: [number, number][] = [];
-    let start = -1;
-    values.forEach((value, index) => {
-      if (test(value) && start < 0) start = index;
-      if (!test(value) && start >= 0) { if (index - start >= min) found.push([start, index - 1]); start = -1; }
-    });
-    if (start >= 0 && values.length - start >= min) found.push([start, values.length - 1]);
-    return found;
-  };
-  const rows = Array.from({ length: height }, (_, y) => { let count = 0; for (let x = 0; x < width; x++) if (lit(x, y)) count++; return count; });
-  const peak = Math.max(...rows);
-  if (peak < width * 0.15) return undefined;
-  const band = runs(rows, count => count >= peak * 0.6, height * 0.15).sort((a, b) => (b[1] - b[0]) - (a[1] - a[0]))[0];
-  if (!band) return undefined;
-  const [top, bottom] = band;
-  const columns = Array.from({ length: width }, (_, x) => { let count = 0; for (let y = top; y <= bottom; y++) if (lit(x, y)) count++; return count / (bottom - top + 1); });
-  const spans = runs(columns, share => share > 0.5, width * 0.08);
-  if (spans.length !== 2) return undefined;
-  const [a, b] = spans.map(([start, end]) => end - start + 1);
-  if (Math.min(a, b) / Math.max(a, b) < 0.7 || spans[1][0] - spans[0][1] > width * 0.1) return undefined;
-  // Inset by 1% to skip the tiles' rounded corners.
-  return spans.map(([start, end]) => ({ left: start / width + 0.01, right: (end + 1) / width - 0.01, top: top / height + 0.01, bottom: (bottom + 1) / height - 0.01 }));
-}
 // Lock both players this long before the server's deadline, which rejects later locks.
 const captureLead = 900;
 
