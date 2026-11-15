@@ -5,14 +5,15 @@ import { renderTile } from '../dist/tile.js';
 
 test('the hunt clock advances between polls and ignores late estimates for the same deadline', () => {
   const clock = new HuntClock();
-  clock.sync(40_000, 10_000, 100);
+  const deadline = 10_000 + HUNT_DURATION_MS;
+  clock.sync(deadline, 10_000, 100);
   assert.equal(clock.remaining(175), HUNT_DURATION_MS - 75);
-  clock.sync(40_000, 10_075, 200);
+  clock.sync(deadline, 10_075, 200);
   assert.equal(clock.remaining(200), HUNT_DURATION_MS - 100);
-  clock.sync(40_000, 10_120, 210);
+  clock.sync(deadline, 10_120, 210);
   assert.equal(clock.remaining(210), HUNT_DURATION_MS - 120);
   assert.equal(clock.remaining(40_000), 0);
-  clock.sync(80_000, 50_000, 40_000);
+  clock.sync(50_000 + HUNT_DURATION_MS, 50_000, 40_000);
   assert.equal(clock.remaining(40_000), HUNT_DURATION_MS);
 });
 

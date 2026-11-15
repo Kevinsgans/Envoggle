@@ -19,6 +19,7 @@ import type { Duel } from './duel.js';
 import { focusProgress, scanProgress, type Photo } from './find-visual.js';
 import { GROUP_CALL_JOB, GROUP_REFEREE } from './group-call.js';
 import { findTiles, type Tile } from './layout.js';
+import { Recorder } from './recorder.js';
 import { COUNT_UP_MS } from './score-display.js';
 import { DEFAULT_NAMES, TILE_HEIGHT, TILE_WIDTH, renderTile, type View } from './tile.js';
 
@@ -109,6 +110,13 @@ export default defineAgent({
     const audio = new AudioSource(speaker?.sampleRate ?? voiceRate, speaker?.numChannels ?? 1);
     const video = new VideoSource(tileWidth, tileHeight);
     const output = new AbortController();
+    // Demo recording (ENVOGGLE_RECORD_DIR): started on the first frame, once the room has its name.
+    let recorder: Recorder | undefined | null = null;
+    const rec = () => recorder === null ? (recorder = Recorder.start(room.name || 'call')) : recorder;
+    const speak = (frame: AudioFrame) => {
+      rec()?.audio('referee-voice', frame, true);
+      return audio.captureFrame(frame);
+    };
     let code = '';
     let states: State[] = [];
     let caption = 'Waiting for two player feeds';
@@ -216,7 +224,7 @@ export default defineAgent({
         for (let index = 0; index < samples.length && !output.signal.aborted; index += step) {
           const chunk = new Int16Array(step);
           chunk.set(samples.subarray(index, index + step));
-          await audio.captureFrame(new AudioFrame(chunk, voiceRate, 1, step));
+          await speak(new AudioFrame(chunk, voiceRate, 1, step));
         }
       } finally { await rm(file, { force: true }); }
     }
@@ -227,7 +235,7 @@ export default defineAgent({
         if (output.signal.aborted) return;
         if (!speaker) return speakLocally(text);
         const stream = speaker.synthesize(text, undefined, output.signal);
-        try { for await (const sound of stream) await audio.captureFrame(sound.frame); }
+        try { for await (const sound of stream) await speak(sound.frame); }
         finally { stream.close(); }
       }).catch(() => { if (!output.signal.aborted) console.error('[envoggle] Referee speech failed'); });
     }
@@ -377,6 +385,7 @@ export default defineAgent({
           while (!output.signal.aborted) {
             const { value, done } = await reader.read();
             if (done) break;
+            rec()?.video(`call-p${slot + 1}`, value.frame);
             if (!publication.muted && videoTracks.get(slot) === sid) cameras.set(slot, { frame: value.frame, rotation: value.rotation, timestamp: Date.now() });
           }
         })().catch(() => console.error('[envoggle] Video subscription ended')).finally(() => {
@@ -389,7 +398,16 @@ export default defineAgent({
       } else {
         const reader = new AudioStream(track, { sampleRate: listenRate, numChannels: 1 }).getReader();
         const transcription = listener.stream();
-        stopReaders.set(sid, () => { void reader.cancel().catch(() => {}); transcription.close(); });
+        // The recording gets its own full-rate copy of the call audio (speech recognition uses 16 kHz).
+        const recording = process.env.ENVOGGLE_RECORD_DIR ? new AudioStream(track, { sampleRate: 48000, numChannels: 1 }).getReader() : undefined;
+        stopReaders.set(sid, () => { void reader.cancel().catch(() => {}); void recording?.cancel().catch(() => {}); transcription.close(); });
+        if (recording) void (async () => {
+          while (!output.signal.aborted) {
+            const { value, done } = await recording.read();
+            if (done) break;
+            rec()?.audio(`call-audio-p${slot + 1}`, value);
+          }
+        })().catch(() => {});
         void (async () => {
           while (!output.signal.aborted) {
             const { value, done } = await reader.read();
@@ -500,6 +518,7 @@ export default defineAgent({
       }
       if (!still || output.signal.aborted) return;
       video.captureFrame(still);
+      rec()?.video('referee', still);
       if (next.kind === 'reveal' && first?.results && currentCode === code && states[0]?.round === first.round && states[0].phase === 'result') {
         const identifier = `${code}:${first.round}:result`;
         if (spokenCaption !== identifier) {
@@ -626,6 +645,7 @@ export default defineAgent({
       stopReaders.forEach(stop => stop());
       if (code && states[0]?.phase === 'hunt') await api(0, 'drop', {}).catch(() => {});
       await Promise.allSettled([speaker?.close(), listener.close(), audio.close(), video.close()]);
+      recorder?.close();
     });
   },
 });

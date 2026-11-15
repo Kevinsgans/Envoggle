@@ -49,3 +49,10 @@ test('every category has five tier names and anchors inside 1 to 1000', () => {
   }
   assert.equal(drawRounds().length, ROUNDS_PER_MATCH);
 });
+
+test('ENVOGGLE_ROUNDS fixes the categories in order and ignores bad lists', () => {
+  assert.deepEqual(drawRounds(Math.random, '1,7,8'), [0, 6, 7]);
+  assert.equal(rounds[0].prompt, 'Rare things that are blue');
+  assert.equal(drawRounds(Math.random, '1,1,8').length, ROUNDS_PER_MATCH);
+  assert.equal(drawRounds(() => 0.5, '0,7,8').every(index => index >= 0 && index < rounds.length), true);
+});

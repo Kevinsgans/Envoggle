@@ -358,8 +358,14 @@ export const rounds = [blue, electricity, price, heavy, oldest, loud, calories, 
 export const ROUNDS_PER_MATCH = 3;
 export type Category = typeof rounds[number];
 
-// A match's categories: indexes into `rounds`, drawn at random with no repeats.
-export function drawRounds(random = Math.random) {
+// A match's categories: indexes into `rounds`, drawn at random with no repeats. ENVOGGLE_ROUNDS fixes
+// them instead (1-based positions in `rounds`, in play order, e.g. "1,7,8" for a demo video).
+export function drawRounds(random = Math.random, fixed = globalThis.process?.env?.ENVOGGLE_ROUNDS) {
+  if (fixed) {
+    const picks = fixed.split(',').map(value => Number(value.trim()) - 1);
+    if (picks.length === ROUNDS_PER_MATCH && new Set(picks).size === picks.length && picks.every(index => Number.isInteger(index) && index >= 0 && index < rounds.length)) return picks;
+    console.warn('[envoggle] Ignoring ENVOGGLE_ROUNDS: give', ROUNDS_PER_MATCH, 'different positions from 1 to', rounds.length);
+  }
   return rounds.map((_, index) => ({ index, key: random() })).sort((a, b) => a.key - b.key).map(item => item.index).slice(0, ROUNDS_PER_MATCH);
 }
 type DictionaryItem = { name: string; aliases: readonly string[]; tier: (typeof RARITY)[keyof typeof RARITY]; points: number };

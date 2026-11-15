@@ -1,4 +1,4 @@
-export const HUNT_DURATION_MS = 30_000;
+export const HUNT_DURATION_MS = 20_000;
 export const FINAL_COUNTDOWN_MS = 5_000;
 
 // Use the server deadline with a monotonic clock between state polls.
