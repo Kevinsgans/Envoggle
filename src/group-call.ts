@@ -151,6 +151,8 @@ export async function startGroupCall(input: unknown) {
       if (code === 'facetime_group_unavailable') throw new GroupCallError(503, 'Ask Chert to enable group video on this line.');
       if (code === 'recipient_not_verified') throw new GroupCallError(403, 'Both phone numbers need verification on the Chert line.');
       if (code === 'line_busy') throw new GroupCallError(409, 'Chert is busy. Try again after the other call ends.');
+      console.warn('[envoggle] Chert declined the call:', response.status, code ?? 'no code', reply?.error?.message ?? '');
+      if (/minute|allowance|quota|limit/i.test(`${code} ${reply?.error?.message ?? ''}`)) throw new GroupCallError(429, 'Out of Chert FaceTime minutes for now.');
       throw new GroupCallError(502, 'Chert declined the game call. Check line readiness and recipient verification.');
     }
     const callID = reply?.data?.id;

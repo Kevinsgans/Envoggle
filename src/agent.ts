@@ -45,8 +45,10 @@ const tileWidth = TILE_WIDTH;
 const tileHeight = TILE_HEIGHT;
 // How long the last round's reveal shows before the final scores screen.
 const FINAL_AFTER_MS = 12_000;
-// A player has left when FaceTime has shown one person full-screen this long; the call then ends.
+// A player has left when FaceTime has shown one person this long; the call then ends. Mid-game it waits
+// longer: a paused video (a player switching apps or locking their phone) looks the same for a while.
 const LEFT_AFTER_MS = 5_000;
+const LEFT_MIDGAME_MS = 25_000;
 // No "continue": the next round starts on its own this long after a reveal (or a void round).
 const NEXT_ROUND_MS = 10_000;
 const REPLAY_MS = 5_000;
@@ -577,7 +579,8 @@ export default defineAgent({
       try {
         await checkLayout();
         // Group call: one person full-screen for a few seconds, after the two-tile layout, means a player left.
-        if (aloneSince && Date.now() - aloneSince > LEFT_AFTER_MS && bridgeReady(room.metadata)) void hangUp('a player left the group call');
+        const over = Boolean(states[0]?.completed);
+        if (aloneSince && Date.now() - aloneSince > (over ? LEFT_AFTER_MS : LEFT_MIDGAME_MS) && bridgeReady(room.metadata)) void hangUp('a player left the group call');
         if (outboundGroup && !bridgeReady(room.metadata)) {
           await scoreboard();
           return;
