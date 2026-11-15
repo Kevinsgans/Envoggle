@@ -240,7 +240,6 @@ export function renderTile(view: View) {
           return out;
         },
       },
-      { height: 30, draw: top => text('Say “start” for a new match', center, top, 28, { fill: muted }) },
     ], 40);
   } else body = findCards(view);
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${TILE_WIDTH}" height="${TILE_HEIGHT}"><rect width="${TILE_WIDTH}" height="${TILE_HEIGHT}" fill="${ground}"/>${body}</svg>`;

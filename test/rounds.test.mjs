@@ -7,7 +7,7 @@ import { FOCUS_MS, SCAN_MIN_MS } from '../dist/find-visual.js';
 
 const json = result => Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify(result) }] } }] });
 
-test('plays three different categories, replays a void round, and a start after the last round begins a new match', async ({ mock }) => {
+test('plays three different categories, replays a void round, and stops after the third round', async ({ mock }) => {
   process.env.GEMINI_API_KEY = 'test';
   delete process.env.ANTHROPIC_API_KEY;
   mock.timers.enable({ apis: ['setTimeout', 'Date'] });
@@ -31,21 +31,17 @@ test('plays three different categories, replays a void round, and a start after 
   await play(); prompts.push(duel.state(0).prompt);
   assert.deepEqual(prompts, duel.order.map(index => rounds[index].prompt));
   assert.equal(new Set(prompts).size, ROUNDS_PER_MATCH);
-  const firstMatch = [...duel.order];
   assert.equal(duel.state(0).completed, true);
   assert.deepEqual(duel.state(0).totalScores, [298 * ROUNDS_PER_MATCH, 0]);
+  // The match stops after three rounds: another start does nothing.
   start();
-  assert.equal(duel.phase, 'hunt');
-  assert.equal(duel.state(0).stage, 1);
-  assert.equal(duel.state(0).prompt, rounds[duel.order[0]].prompt);
-  // 10 categories: the next match draws three it did not just play.
-  assert.ok(duel.order.every(index => !firstMatch.includes(index)));
-  assert.deepEqual(duel.state(0).totalScores, [0, 0]);
-  duel.void('Test ended');
+  assert.equal(duel.phase, 'result');
+  assert.equal(duel.state(0).completed, true);
+  assert.deepEqual(duel.state(0).totalScores, [298 * ROUNDS_PER_MATCH, 0]);
 });
 
 test('every category has five tier names and anchors inside 1 to 1000', () => {
-  assert.equal(rounds.length, 10);
+  assert.equal(rounds.length, 9);
   for (const round of rounds) {
     assert.equal(round.tiers.length, 5, round.prompt);
     for (const item of round.items) assert.ok(item.points >= 1 && item.points <= 1000, `${round.prompt}: ${item.name}`);

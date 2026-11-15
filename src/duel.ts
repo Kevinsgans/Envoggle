@@ -70,18 +70,12 @@ export class Duel {
   }
 
   ready(slot: number, retain: boolean) {
-    if (!this.accepted || !['lobby', 'result', 'void'].includes(this.phase)) return;
+    // A match is three rounds and then it is over: no new match starts in the same call.
+    if (!this.accepted || !['lobby', 'result', 'void'].includes(this.phase) || this.scoredRounds >= ROUNDS_PER_MATCH) return;
     this.players[slot].ready = true;
     this.players[slot].retain = retain;
     if (!this.players.every(player => player.ready)) return;
     if (this.phase !== 'lobby') this.round++;
-    // After the last category, the next start begins a new match.
-    if (this.scoredRounds >= ROUNDS_PER_MATCH) {
-      this.order = drawRounds(this.order);
-      this.scoredRounds = 0;
-      this.totalScores = [0, 0];
-      this.history = [];
-    }
     this.stage = this.scoredRounds;
     this.entries = empty();
     this.results = undefined;

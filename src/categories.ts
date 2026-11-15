@@ -243,21 +243,6 @@ export const longest = {
   ],
 } as const;
 
-// Points from the count of physical buttons on a log scale: 1000 × log10(n + 1) / log10(201). 1 = 131, 10 = 452, 100 ≈ 870, 200 = 1000.
-export const buttons = {
-  prompt: 'Thing with the most buttons',
-  goal: 'Find the thing with the most buttons',
-  rule: `Count only physical buttons, keys and switches on the real object; icons on a touchscreen do not count. ${SCREEN}`,
-  measure: 'how many physical buttons, keys and switches it has, on a log scale: 1 is 131, 3 is 261, 10 is 452, 30 is 648, 50 is 742, 100 is 871, 200 or more is 1000',
-  tiers: ['Few', 'Some', 'Many', 'Loads', 'Cockpit'],
-  items: [
-    anchor('pen', ['clicky pen'], 131), anchor('smartphone', ['phone', 'iphone'], 262), anchor('computer mouse', ['mouse'], 261),
-    anchor('game controller', ['controller', 'gamepad'], 546), anchor('calculator', ['scientific calculator', 'graphing calculator'], 701),
-    anchor('tv remote', ['remote', 'remote control'], 722), anchor('laptop', ['macbook'], 829), anchor('piano', ['keyboard piano', 'digital piano'], 846),
-    anchor('keyboard', ['computer keyboard'], 878), anchor('mixing desk', ['mixer', 'soundboard'], 998),
-  ],
-} as const;
-
 // Judged, not measured: how unexpected the object is in a dorm or study room.
 export const weird = {
   prompt: 'Weirdest thing',
@@ -273,15 +258,13 @@ export const weird = {
 } as const;
 
 // Every category; each match plays ROUNDS_PER_MATCH of them, drawn at random.
-export const rounds = [blue, electricity, price, heavy, oldest, loud, calories, longest, buttons, weird] as const;
+export const rounds = [blue, electricity, price, heavy, oldest, loud, calories, longest, weird] as const;
 export const ROUNDS_PER_MATCH = 3;
 export type Category = typeof rounds[number];
 
-// A match's categories: indexes into `rounds`, no repeats, avoiding the previous match's where possible.
-export function drawRounds(previous: readonly number[] = [], random = Math.random) {
-  const shuffle = (list: number[]) => list.map(index => ({ index, key: random() })).sort((a, b) => a.key - b.key).map(item => item.index);
-  const fresh = shuffle(rounds.map((_, index) => index).filter(index => !previous.includes(index)));
-  return [...fresh, ...shuffle([...previous])].slice(0, ROUNDS_PER_MATCH);
+// A match's categories: indexes into `rounds`, drawn at random with no repeats.
+export function drawRounds(random = Math.random) {
+  return rounds.map((_, index) => ({ index, key: random() })).sort((a, b) => a.key - b.key).map(item => item.index).slice(0, ROUNDS_PER_MATCH);
 }
 type DictionaryItem = { name: string; aliases: readonly string[]; tier: (typeof RARITY)[keyof typeof RARITY]; points: number };
 
