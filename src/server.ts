@@ -61,6 +61,13 @@ const server = createServer(async (request, response) => {
         response.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store' });
         return response.end(frame);
       }
+      if (action === 'object') {
+        const frame = await duel.objectFrame(Number(url.searchParams.get('player')));
+        if (!frame) return json(404, { error: 'Object preview unavailable' });
+        const isPng = frame.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+        response.writeHead(200, { 'Content-Type': isPng ? 'image/png' : 'image/jpeg', 'Cache-Control': 'no-store' });
+        return response.end(frame);
+      }
       if (action === 'media') {
         const { LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET } = process.env;
         if (!LIVEKIT_URL || !LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) return json(503, { error: 'LiveKit is unavailable.' });

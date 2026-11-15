@@ -16,6 +16,7 @@ let renderedChoices = '';
 let renderedResults = '';
 let joining: Promise<void> | undefined;
 let clockOffset = 0;
+let scanPhotoUrl = '';
 
 async function request(path: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
@@ -110,6 +111,7 @@ function actionButton(text: string, onClick: () => void) {
 function render(current: State) {
   if (state && current.serverTime < state.serverTime) return;
   state = current;
+  element('scan-stage').hidden = current.phase === 'result' || current.phase === 'void' || (current.phase === 'hunt' && !current.locked[current.slot]);
   clockOffset = current.serverTime - Date.now();
   element('arena').hidden = false;
   element('prompt').textContent = current.prompt;
@@ -174,21 +176,27 @@ function render(current: State) {
         const score = current.results[slot];
         const card = document.createElement('article');
         card.className = 'result';
+        const visual = document.createElement('div');
+        visual.className = 'result-visual';
+        const scan = document.createElement('span');
+        scan.className = 'result-scan';
+        scan.setAttribute('aria-hidden', 'true');
+        visual.append(scan);
         const caption = document.createElement('strong');
         caption.textContent = `${score.label} · ${score.points} pts`;
         const reason = document.createElement('p');
         reason.textContent = score.reason;
-        void fetch(`/api/duels/${code}/frame?player=${slot}`, { headers: { Authorization: `Bearer ${token}` } })
+        void fetch(`/api/duels/${code}/object?player=${slot}`, { headers: { Authorization: `Bearer ${token}` } })
           .then(response => response.ok ? response.blob() : undefined).then(blob => {
             if (!blob) return;
             const image = document.createElement('img');
-            image.alt = score.label;
+            image.alt = `${score.label}, isolated object cutout when segmentation succeeds`;
             const url = URL.createObjectURL(blob);
             image.onload = image.onerror = () => URL.revokeObjectURL(url);
             image.src = url;
-            card.prepend(image);
+            visual.prepend(image);
           }).catch(() => {});
-        card.append(caption, reason);
+        card.append(visual, caption, reason);
         grid.append(card);
       }
       region.append(title, grid);
@@ -247,6 +255,11 @@ button('lock').onclick = async () => {
   canvas.getContext('2d')?.drawImage(local, 0, 0, canvas.width, canvas.height);
   const frame = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', .82));
   if (!frame) return;
+  if (scanPhotoUrl) URL.revokeObjectURL(scanPhotoUrl);
+  scanPhotoUrl = URL.createObjectURL(frame);
+  element<HTMLImageElement>('scan-photo').src = scanPhotoUrl;
+  element('scan-label').textContent = 'Scanning your find…';
+  element('scan-stage').hidden = false;
   try {
     render(await request(`/${code}/lock?round=${round}`, { method: 'POST', body: frame }));
     element('error').hidden = true;
