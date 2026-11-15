@@ -621,7 +621,7 @@ export default defineAgent({
             let announcement = '';
             if (first.phase === 'hunt') {
               huntClock.sync(first.deadline, first.serverTime);
-              announcement = `Round ${first.stage}: ${first.prompt}. Go!`;
+              announcement = `Round ${first.stage}: ${first.prompt}.`;
               if (capturedRound !== first.round) {
                 capturedRound = first.round;
                 clearTimeout(captureTimer);
