@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import sharp from 'sharp';
 import type { Duel } from './duel.js';
+import { DEFAULT_NAMES, TILE_HEIGHT, TILE_WIDTH, renderTile, type View } from './tile.js';
 
 type State = ReturnType<Duel['state']>;
 type Camera = { frame: VideoFrame; timestamp: number; rotation: VideoRotation };
@@ -28,7 +29,7 @@ const matchers = [1, 2].map(number => ({
 // Without CHERT_PLAYER_* settings, each remote participant becomes the next free player slot.
 const autoAssign = !matchers.some(matcher => matcher.identity || matcher.audio || matcher.video);
 // Words the players say to the referee, to bias Gemini transcription.
-const vocabulary = ['Envoggle', 'start', 'start and save my frame', 'rematch'];
+const vocabulary = ['Envoggle', 'start', 'start and save my frame', 'rematch', 'skip', 'my name is'];
 // In a Group FaceTime call, Chert (beta.21) sends one capture of its FaceTime window with player 1
 // in the left tile and player 2 in the right tile. The window size varies, so the tiles are found
 // in each checked frame: the widest band of lit rows, split into exactly two similar lit column spans.
@@ -62,25 +63,20 @@ function findTiles(data: Buffer, width: number, height: number, channels: number
 // Lock both players this long before the server's deadline, which rejects later locks.
 const captureLead = 900;
 
-const tileWidth = 720;
-const tileHeight = 1280;
+const tileWidth = TILE_WIDTH;
+const tileHeight = TILE_HEIGHT;
+const huntSeconds = 30;
 
-function wrap(value: string, chars: number) {
-  const lines: string[] = [];
-  for (const word of value.split(/\s+/).filter(Boolean)) {
-    const last = lines.length - 1;
-    if (last >= 0 && (lines[last] + ' ' + word).length <= chars) lines[last] += ' ' + word;
-    else lines.push(word.slice(0, chars));
-  }
-  return lines;
+// Turns "hi, my name is alex" into "Alex". Returns undefined for anything that is not a name.
+function parseName(words: string) {
+  const rest = words.replace(/[^a-z\s-]/g, ' ').replace(/\b(hi|hey|hello|yo|so|um|uh|okay|ok|my name is|my names|name is|names|i am|im|its|this is|call me|and|i)\b/g, ' ').trim().split(/\s+/);
+  const name = rest[0] ?? '';
+  if (name.length < 2 || ['wave', 'waving', 'envoggle', 'yes', 'no', 'the', 'is', 'me'].includes(name)) return undefined;
+  return (name[0].toUpperCase() + name.slice(1)).slice(0, 12);
 }
 
 function bridgeReady(metadata: string | undefined) {
   try { return JSON.parse(metadata || '{}')?.chert_bridge_ready === true; } catch { return false; }
-}
-
-function escapeXml(value: string) {
-  return value.replace(/[<>&"']/g, character => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[character]!);
 }
 
 export default defineAgent({
@@ -116,6 +112,7 @@ export default defineAgent({
     let caption = 'Waiting for two player feeds';
     let spokenCaption = '';
     let lastImageKey = '';
+    let syncedAt = 0;
     let speech = Promise.resolve();
     let pendingStatus = false;
     let ticking = false;
@@ -129,6 +126,17 @@ export default defineAgent({
     let layoutChecked = 0;
     let capturedRound = -1;
     let captureTimer: ReturnType<typeof setTimeout> | undefined;
+    // Names: once both players are on camera, the referee asks Orange (player 1), then Blue, to
+    // say their name. The names screen shows each player's live camera in their colour box.
+    const names: (string | undefined)[] = [undefined, undefined];
+    let namingStarted = 0;
+    let namingDone = false;
+    let previews: (Buffer | undefined)[] = [undefined, undefined];
+    let previewedAt = 0;
+    // The frames captured for the reveal, by round.
+    let frames: (Buffer | undefined)[] = [undefined, undefined];
+    let framesRound = -1;
+    const shown = () => names.map((name, slot) => name ?? DEFAULT_NAMES[slot]);
 
     async function api(slot: number, action: string, body?: object | Buffer, round?: number): Promise<State> {
       const query = new URLSearchParams({ slot: String(slot) });
@@ -231,7 +239,12 @@ export default defineAgent({
       if (output.signal.aborted || state?.phase !== 'hunt' || state.round !== round) return;
       await Promise.all(slots.map(async slot => {
         if (!fresh(slot)) return;
-        try { await api(slot, 'lock', await capture(slot), round); }
+        try {
+          const jpeg = await capture(slot);
+          if (framesRound !== round) { frames = [undefined, undefined]; framesRound = round; }
+          frames[slot] = jpeg;
+          await api(slot, 'lock', jpeg, round);
+        }
         catch { console.warn('[envoggle] Could not capture player', slot + 1); }
       }));
     }
@@ -248,11 +261,24 @@ export default defineAgent({
       const state = await api(0, 'state');
       say(state.retentionEnabled && !split()
         ? 'Both players are in. Vision training is optional. Envoggle may license or sell confirmed images and labels to third parties for vision model training. Say start to play, or say start and save my frame to opt in.'
-        : 'Both players are in. Say start to play.');
+        : names.every(Boolean) ? `${names[0]} and ${names[1]}, say start to play.` : 'Say start to play.');
     }
 
     async function command(slot: number, transcript: string) {
       const words = transcript.trim().replace(/[.!?]+$/, '').toLowerCase().replace(/[’']/g, '');
+      if (namingStarted && !namingDone) {
+        if (/\b(skip|start|ready)\b/.test(words)) { namingDone = true; return; }
+        const name = parseName(words);
+        // One name at a time in turn order. With separate audio per player, the speaker's slot is known.
+        const target = split() ? names.findIndex(known => !known) : slot;
+        if (!name || target < 0) return;
+        names[target] = name;
+        console.info('[envoggle] Player', target + 1, 'is named', JSON.stringify(name));
+        const next = names.findIndex(known => !known);
+        say(next < 0 ? `Hi ${name}.` : `Hi ${name}. ${DEFAULT_NAMES[next]} player, say your name.`);
+        if (next < 0) namingDone = true;
+        return;
+      }
       if (!code) return;
       const first = states[0];
       if (!first) return;
@@ -362,50 +388,33 @@ export default defineAgent({
     greet();
 
     let still: VideoFrame | undefined;
-    async function scoreboard() {
+    function view(): View {
       const first = states[0];
-      let title = 'ENVOGGLE';
-      let detail = caption;
-      const rows: string[] = [];
-      if (first) {
-        title = first.prompt;
-        const seconds = Math.max(0, Math.ceil((first.deadline - Date.now()) / 1000));
-        if (first.phase === 'hunt') {
-          detail = `${seconds}s · Hold up your find`;
-          if (seconds === 5 && lastCountdown !== `${first.round}:5`) {
-            lastCountdown = `${first.round}:5`;
-            say('Five seconds. Hold your find up to the camera.');
-          }
-          rows.push(...first.locked.map((locked, slot) => `Player ${slot + 1} · ${locked ? 'Captured' : 'Hunting'}`));
-        } else if (first.results) {
-          const [a, b] = first.results;
-          detail = a.points === b.points ? 'Draw' : `Player ${a.points > b.points ? 1 : 2} wins`;
-          rows.push(...first.results.map((result, slot) => `Player ${slot + 1} · ${result.label} · ${result.points} pts`));
-        } else detail = first.message || caption;
+      const players = shown();
+      if (!code || !first) {
+        if (!readyMedia()) return { kind: 'waiting', present: [cameras.size > 0, false] };
+        if (!namingDone) return { kind: 'names', names: [...names], turn: Math.max(0, names.findIndex(known => !known)), frames: previews };
+        return { kind: 'message', title: 'Setting up the round', detail: 'One moment' };
       }
-      const key = JSON.stringify([title, detail, rows]);
-      if (key !== lastImageKey) {
-        // Portrait tile. FaceTime crops it to fill the screen or a group tile, so all text stays
-        // centered inside the middle safe area (about 560 x 720 px) and wraps instead of running off.
-        const blocks = [
-          { lines: wrap(title, 16).slice(0, 2), size: 56, gap: 36, weight: 700 },
-          { lines: wrap(detail, 22).slice(0, 2), size: 40, gap: 44, weight: 400 },
-          ...rows.map(row => ({ lines: wrap(row, 32).slice(0, 2), size: 34, gap: 16, weight: 400 })),
-        ];
-        const bar = 40;
-        const height = bar + blocks.reduce((sum, item) => sum + item.lines.length * item.size * 1.2 + item.gap, 0);
-        let y = (tileHeight - height) / 2;
-        let body = `<rect x="${(tileWidth - 240) / 2}" y="${y}" width="240" height="8" fill="#A9EFC3"/>`;
-        y += bar;
-        for (const item of blocks) {
-          body += item.lines.map(part => {
-            y += item.size * 1.2;
-            return `<text x="${tileWidth / 2}" y="${y - item.size * 0.25}" text-anchor="middle" fill="#F0F4F7" font-family="Helvetica, Arial, sans-serif" font-weight="${item.weight}" font-size="${item.size}">${escapeXml(part)}</text>`;
-          }).join('');
-          y += item.gap;
+      if (first.phase === 'hunt') {
+        const seconds = Math.max(0, Math.ceil((first.deadline - first.serverTime - (Date.now() - syncedAt)) / 1000));
+        if (seconds === 5 && lastCountdown !== `${first.round}:5`) {
+          lastCountdown = `${first.round}:5`;
+          say('Five seconds. Hold your find up to the camera.');
         }
-        const svg = `<svg width="${tileWidth}" height="${tileHeight}"><rect width="${tileWidth}" height="${tileHeight}" fill="#111a25"/>${body}</svg>`;
-        const pixels = await sharp(Buffer.from(svg)).ensureAlpha().raw().toBuffer();
+        return { kind: 'hunt', names: players, prompt: first.prompt, seconds: Math.min(seconds, huntSeconds), total: huntSeconds, locked: first.locked };
+      }
+      if (first.phase === 'confirm' || first.phase === 'scoring') return { kind: 'scoring', names: players };
+      if (first.results) return { kind: 'reveal', names: players, prompt: first.prompt, results: first.results, frames: framesRound === first.round ? frames : [undefined, undefined] };
+      if (first.phase === 'void') return { kind: 'message', title: 'Round void', detail: `${first.message} Say “start” to try again.` };
+      return { kind: 'ready', names: players, prompt: first.prompt };
+    }
+
+    async function scoreboard() {
+      const next = view();
+      const key = JSON.stringify(next, (name, value) => name === 'frames' ? (next.kind === 'names' ? previewedAt : (value as unknown[]).map(Boolean).join() + framesRound) : value);
+      if (key !== lastImageKey) {
+        const pixels = await sharp(Buffer.from(renderTile(next))).ensureAlpha().raw().toBuffer();
         still = new VideoFrame(pixels, tileWidth, tileHeight, VideoBufferType.RGBA);
         lastImageKey = key;
       }
@@ -418,7 +427,20 @@ export default defineAgent({
       try {
         await checkLayout();
         if (!code) {
-          if (readyMedia()) {
+          if (readyMedia() && !namingStarted) {
+            namingStarted = Date.now();
+            say('Before we play, find your colour on the referee screen. Orange player, say your name.');
+          }
+          // Refresh the live camera previews on the names screen once a second.
+          if (namingStarted && !namingDone && Date.now() - previewedAt > 1000) {
+            previewedAt = Date.now();
+            void Promise.all(slots.map(slot => fresh(slot)
+              ? capture(slot).then(jpeg => sharp(jpeg).resize(300, 300, { fit: 'cover' }).jpeg({ quality: 70 }).toBuffer()).catch(() => undefined)
+              : Promise.resolve(undefined))).then(next => { previews = next; });
+          }
+          // Naming ends when both have names, someone says skip or start, or after 40 s.
+          if (namingStarted && Date.now() - namingStarted > 40_000) namingDone = true;
+          if (readyMedia() && namingDone) {
             caption = 'Setting up the round';
             if (!creating && Date.now() - lastCreate > 5000) {
               creating = true;
@@ -432,6 +454,7 @@ export default defineAgent({
           void Promise.all(slots.map(slot => api(slot, 'state'))).then(async next => {
             if (output.signal.aborted) return;
             states = next;
+            syncedAt = Date.now();
             const [first] = next;
             if (first.phase === 'hunt' && !readyMedia()) await api(0, 'drop', {});
             let announcement = '';
@@ -446,7 +469,8 @@ export default defineAgent({
             caption = ['confirm', 'scoring'].includes(first.phase) ? 'Scoring both finds' : 'Say “start” to play';
             if (first.results) {
               const [a, b] = first.results;
-              announcement = `Player one: ${a.label}, ${a.points} points. ${a.reason} Player two: ${b.label}, ${b.points} points. ${b.reason} ${a.points === b.points ? 'A draw.' : `Player ${a.points > b.points ? 'one' : 'two'} wins.`}`;
+              const [one, two] = shown();
+              announcement = `${one}: ${a.label}, ${a.points} points. ${a.reason} ${two}: ${b.label}, ${b.points} points. ${b.reason} ${a.points === b.points ? 'A draw.' : `${a.points > b.points ? one : two} wins.`}`;
             }
             if (first.phase === 'void') announcement = first.message;
             const identifier = `${first.round}:${first.phase}:${announcement}`;
