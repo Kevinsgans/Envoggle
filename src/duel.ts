@@ -55,7 +55,7 @@ export class Duel {
     return {
       code: this.code, accepted: this.accepted, phase: this.phase, round: this.round,
       stage: this.stage + 1, totalRounds: TOTAL_ROUNDS, totalScores: this.totalScores, completed: this.scoredRounds >= TOTAL_ROUNDS && this.phase === 'result',
-      deadline: this.deadline, serverTime: Date.now(), prompt: rounds[this.stage].prompt, ready: this.players.map(player => player.ready),
+      deadline: this.deadline, serverTime: Date.now(), prompt: rounds[this.stage].prompt, goal: rounds[this.stage].goal, ready: this.players.map(player => player.ready),
       locked: this.entries.map(find => Boolean(find.frame)), message: this.message,
       guesses: entry.done ? [] : entry.guesses, options: entry.options, confirmed: entry.done,
       results: this.results, presentation: this.presentation, retentionEnabled: Boolean(process.env.TRAINING_DATA_DIR), slot,

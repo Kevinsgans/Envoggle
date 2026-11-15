@@ -1,4 +1,4 @@
-import { RARITY } from './categories.js';
+import { tierName } from './categories.js';
 import { renderPhoto, type FindGeometry, type Photo } from './find-visual.js';
 import { countUpScore, renderScore } from './score-display.js';
 
@@ -18,9 +18,8 @@ const track = '#1F2A38';
 const lime = '#B8F25C';
 const yellow = '#FFD84D';
 const font = `font-family="Helvetica Neue, Helvetica, Arial, sans-serif"`;
-const tierColors: Record<string, string> = {
-  Common: '#AAB4C0', Uncommon: '#8FD3B6', Rare: '#C9A5FF', 'Super rare': '#FFB3D1', 'Ultra rare': yellow,
-};
+// Colours of the five 200-point bands, lowest first.
+const tierColors = ['#AAB4C0', '#8FD3B6', '#C9A5FF', '#FFB3D1', yellow];
 
 type Result = { label: string; points: number };
 type Finds = { names: string[]; prompt: string; photos: (Photo | undefined)[]; finds?: (FindGeometry | undefined | null)[] };
@@ -48,8 +47,8 @@ export function wrap(value: string, chars: number, max = 2) {
   return lines;
 }
 
-export function tierOf(points: number) {
-  return Object.values(RARITY).find(tier => points >= tier.band[0] && points <= tier.band[1])?.name;
+export function tierOf(points: number, prompt = '') {
+  return tierName(points, prompt);
 }
 
 // Text centred at x, baseline from the top of a line box of the given size.
@@ -126,7 +125,7 @@ function findCards(view: Extract<View, { kind: 'scoring' | 'reveal' }>) {
       const x = 80 + slot * 288;
       const result = results?.[slot];
       const photo = view.photos[slot];
-      const tier = result ? tierOf(result.points) : undefined;
+      const tier = result ? tierOf(result.points, view.prompt) : undefined;
       const lose = winner >= 0 && winner !== slot;
       let out = `<rect x="${x}" y="${top}" width="272" height="520" fill="${card}"/>`;
       out += photo
@@ -145,7 +144,7 @@ function findCards(view: Extract<View, { kind: 'scoring' | 'reveal' }>) {
       out += wrap(result.label, 15).map((line, index) => text(line, x + 18, body + 34 + index * 30, 26, { weight: 700, fill: lose ? soft : ink, anchor: 'start' })).join('');
       if (tier) {
         const width = tier.length * 13 + 24;
-        out += `<rect x="${x + 18}" y="${body + 156}" width="${width}" height="28" fill="${tierColors[tier]}"/>` +
+        out += `<rect x="${x + 18}" y="${body + 156}" width="${width}" height="28" fill="${tierColors[Math.min(4, Math.max(0, Math.ceil(result.points / 200) - 1))]}"/>` +
           text(tier.toUpperCase(), x + 18 + width / 2, body + 162, 18, { weight: 700, fill: ground, spacing: 1 });
       }
       out += `<rect x="${x + 18}" y="${body + 190}" width="236" height="6" fill="#26313F"/><rect x="${x + 18}" y="${body + 190}" width="${Math.round(236 * Math.min(1, result.points / 1000))}" height="6" fill="${COLORS[slot]}"/>`;
@@ -204,7 +203,7 @@ export function renderTile(view: View) {
     const category = heading('NEXT CATEGORY', view.prompt, 64);
     body = stack([
       { height: 24, draw: top => logo(center, top) },
-      { height: category.height + 48, draw: top => category.draw(top) + text('30 seconds · rarest find wins', center, top + category.height + 14, 28, { fill: muted }) },
+      { height: category.height + 48, draw: top => category.draw(top) + text('30 seconds · highest score wins', center, top + category.height + 14, 28, { fill: muted }) },
       { height: 200, draw: top => `<rect x="80" y="${top}" width="560" height="200" fill="${lime}"/>` + mic(center, top + 30, ground) + text('Say “start”', center, top + 104, 72, { weight: 800, fill: ground }) },
       players(view.names, ['In', 'In']),
     ], 44);

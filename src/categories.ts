@@ -8,9 +8,14 @@ export const RARITY = {
   ultraRare: { name: 'Ultra rare', band: [801, 1000] },
 } as const;
 
+// Each round scores on its own 1–1000 scale (`measure`), and its dictionary items are fixed anchors
+// on that scale. `tiers` names the five 200-point bands shown on the reveal.
 export const blue = {
-  prompt: 'Things that are blue',
+  prompt: 'Rare things that are blue',
+  goal: 'Find the rarest blue thing you can',
   rule: 'The real object must be visibly and prominently blue. A tiny blue logo or a depiction on a screen does not qualify.',
+  measure: `how rare it is: 1 is something found everywhere, ${MAX_POINTS} is almost impossible to find during a 30-second campus hunt`,
+  tiers: ['Common', 'Uncommon', 'Rare', 'Super rare', 'Ultra rare'],
   items: [
     // Common (1 - 200)
     { name: 'pen', aliases: ['ballpoint', 'ballpoint pen', 'gel pen'], tier: RARITY.common, points: 15 },
@@ -80,77 +85,91 @@ export const blue = {
   ],
 } as const;
 
+// Points from typical power draw while running, on a log scale: 1000 × (log10(watts) + 2) / 6.
+// 0.01 W = 0, 1 W ≈ 333, 10 W = 500, 100 W ≈ 667, 1,000 W ≈ 833, 10,000 W = 1000.
 export const electricity = {
-  prompt: 'Things that use electricity',
-  rule: 'The real object must be visibly powered by or explicitly designed to plug into electricity or run on batteries. Internal electronic components must be central to its operation.',
+  prompt: 'Things that use the most electricity',
+  goal: 'Find the thing that uses the most electricity',
+  rule: 'The real object must run on electricity, plugged in or on batteries. It does not need to be switched on. A depiction on a screen does not qualify.',
+  measure: 'its typical power draw while running, on a log scale: 0.01 W is 1, 1 W is 333, 10 W is 500, 100 W is 667, 1,000 W is 833, 10,000 W or more is 1000',
+  tiers: ['Trickle', 'Low power', 'Medium power', 'High power', 'Power hog'],
   items: [
-    { name: 'smartphone', aliases: ['cell phone', 'phone', 'mobile phone'], tier: RARITY.common, points: 15 },
-    { name: 'laptop', aliases: ['computer', 'notebook computer'], tier: RARITY.common, points: 30 },
-    { name: 'usb cable', aliases: ['phone charger', 'charging cable'], tier: RARITY.common, points: 50 },
-    { name: 'headphones', aliases: ['earbuds', 'wireless headphones'], tier: RARITY.common, points: 75 },
-    { name: 'smartwatch', aliases: ['watch', 'fitness tracker'], tier: RARITY.common, points: 100 },
-    { name: 'light bulb', aliases: ['lamp bulb', 'bulb'], tier: RARITY.common, points: 125 },
-    { name: 'power strip', aliases: ['surge protector', 'extension cord'], tier: RARITY.common, points: 150 },
-    { name: 'tablet', aliases: ['ipad'], tier: RARITY.common, points: 175 },
-    { name: 'computer mouse', aliases: ['mouse', 'wireless mouse'], tier: RARITY.common, points: 190 },
-    { name: 'keyboard', aliases: ['computer keyboard'], tier: RARITY.common, points: 200 },
-    { name: 'desk lamp', aliases: ['lamp', 'table lamp'], tier: RARITY.uncommon, points: 230 },
-    { name: 'microwave', aliases: ['microwave oven'], tier: RARITY.uncommon, points: 270 },
-    { name: 'refrigerator', aliases: ['fridge'], tier: RARITY.uncommon, points: 310 },
-    { name: 'coffee maker', aliases: ['espresso machine', 'coffeepot'], tier: RARITY.uncommon, points: 350 },
-    { name: 'toaster', aliases: ['bread toaster'], tier: RARITY.uncommon, points: 380 },
-    { name: 'electric fan', aliases: ['desk fan', 'box fan'], tier: RARITY.uncommon, points: 400 },
-    { name: 'blender', aliases: ['smoothie maker'], tier: RARITY.rare, points: 440 },
-    { name: 'hair dryer', aliases: ['blow dryer'], tier: RARITY.rare, points: 480 },
-    { name: 'monitor', aliases: ['computer monitor', 'display screen'], tier: RARITY.rare, points: 520 },
-    { name: 'router', aliases: ['wifi router', 'modem'], tier: RARITY.rare, points: 560 },
-    { name: 'printer', aliases: ['laser printer', 'inkjet printer'], tier: RARITY.rare, points: 580 },
-    { name: 'vacuum cleaner', aliases: ['vacuum'], tier: RARITY.rare, points: 600 },
-    { name: 'record player', aliases: ['turntable'], tier: RARITY.superRare, points: 660 },
-    { name: 'electric guitar', aliases: ['guitar'], tier: RARITY.superRare, points: 720 },
-    { name: 'projector', aliases: ['video projector'], tier: RARITY.superRare, points: 760 },
-    { name: 'air purifier', aliases: ['humidifier'], tier: RARITY.superRare, points: 790 },
-    { name: 'mini fridge', aliases: ['dorm fridge'], tier: RARITY.superRare, points: 800 },
-    { name: 'oscilloscope', aliases: ['signal generator'], tier: RARITY.ultraRare, points: 880 },
-    { name: '3d printer', aliases: [], tier: RARITY.ultraRare, points: 930 },
-    { name: 'arcade cabinet', aliases: ['arcade machine'], tier: RARITY.ultraRare, points: 970 },
-    { name: 'server rack', aliases: ['mainframe'], tier: RARITY.ultraRare, points: 1000 },
+    { name: 'calculator', aliases: ['pocket calculator'], tier: RARITY.common, points: 133 },
+    { name: 'smartwatch', aliases: ['watch', 'fitness tracker', 'apple watch'], tier: RARITY.uncommon, points: 283 },
+    { name: 'computer mouse', aliases: ['mouse', 'wireless mouse'], tier: RARITY.uncommon, points: 283 },
+    { name: 'headphones', aliases: ['earbuds', 'airpods', 'wireless headphones'], tier: RARITY.uncommon, points: 333 },
+    { name: 'keyboard', aliases: ['computer keyboard'], tier: RARITY.uncommon, points: 333 },
+    { name: 'flashlight', aliases: ['torch'], tier: RARITY.rare, points: 450 },
+    { name: 'smartphone', aliases: ['phone', 'cell phone', 'mobile phone', 'iphone'], tier: RARITY.rare, points: 450 },
+    { name: 'light bulb', aliases: ['led bulb', 'bulb'], tier: RARITY.rare, points: 492 },
+    { name: 'router', aliases: ['wifi router', 'modem'], tier: RARITY.rare, points: 500 },
+    { name: 'tablet', aliases: ['ipad'], tier: RARITY.rare, points: 500 },
+    { name: 'phone charger', aliases: ['charger', 'usb charger', 'power adapter'], tier: RARITY.rare, points: 550 },
+    { name: 'desk lamp', aliases: ['lamp', 'table lamp'], tier: RARITY.rare, points: 590 },
+    { name: 'monitor', aliases: ['computer monitor', 'display'], tier: RARITY.superRare, points: 613 },
+    { name: 'electric fan', aliases: ['fan', 'desk fan', 'box fan'], tier: RARITY.superRare, points: 616 },
+    { name: 'laptop', aliases: ['computer', 'macbook', 'notebook computer'], tier: RARITY.superRare, points: 630 },
+    { name: 'television', aliases: ['tv'], tier: RARITY.superRare, points: 667 },
+    { name: 'refrigerator', aliases: ['fridge', 'mini fridge'], tier: RARITY.superRare, points: 700 },
+    { name: 'desktop computer', aliases: ['pc', 'gaming pc', 'imac'], tier: RARITY.superRare, points: 747 },
+    { name: 'printer', aliases: ['laser printer', 'inkjet printer'], tier: RARITY.superRare, points: 783 },
+    { name: 'coffee maker', aliases: ['espresso machine', 'keurig'], tier: RARITY.ultraRare, points: 833 },
+    { name: 'toaster', aliases: ['toaster oven'], tier: RARITY.ultraRare, points: 840 },
+    { name: 'microwave', aliases: ['microwave oven'], tier: RARITY.ultraRare, points: 846 },
+    { name: 'vacuum cleaner', aliases: ['vacuum'], tier: RARITY.ultraRare, points: 858 },
+    { name: 'electric kettle', aliases: ['kettle'], tier: RARITY.ultraRare, points: 863 },
+    { name: 'space heater', aliases: ['heater'], tier: RARITY.ultraRare, points: 863 },
+    { name: 'hair dryer', aliases: ['blow dryer'], tier: RARITY.ultraRare, points: 876 },
+    { name: 'electric oven', aliases: ['oven', 'stove', 'range'], tier: RARITY.ultraRare, points: 913 },
+    { name: 'clothes dryer', aliases: ['dryer', 'tumble dryer'], tier: RARITY.ultraRare, points: 950 },
+    { name: 'electric car', aliases: ['tesla', 'ev charger'], tier: RARITY.ultraRare, points: 1000 },
   ],
 } as const;
 
-export const startLetter = {
-  prompt: 'Things that start with the letter T, S, or R',
-  rule: 'The real object must begin with the letter T, S, or R in its standard English common name. The object must be prominently visible.',
+// Points from the typical price new in US dollars, on a log scale: 1000 × (log10(dollars) + 1) / 6.
+// $0.10 = 0, $1 ≈ 167, $10 ≈ 333, $100 = 500, $1,000 ≈ 667, $10,000 ≈ 833, $100,000 = 1000.
+export const price = {
+  prompt: 'Most expensive thing',
+  goal: 'Find the most expensive thing you can',
+  rule: 'Any real object counts. People and animals do not count, and neither does a depiction on a screen.',
+  measure: 'its typical price new in US dollars, on a log scale: $0.10 is 1, $1 is 167, $10 is 333, $100 is 500, $1,000 is 667, $10,000 is 833, $100,000 or more is 1000',
+  tiers: ['Pocket change', 'Cheap', 'Pricey', 'Expensive', 'Luxury'],
   items: [
-    { name: 'table', aliases: ['desk', 'worktable'], tier: RARITY.common, points: 20 },
-    { name: 'shoe', aliases: ['sneaker', 'footwear'], tier: RARITY.common, points: 40 },
-    { name: 'rug', aliases: ['carpet', 'mat'], tier: RARITY.common, points: 60 },
-    { name: 'shirt', aliases: ['t-shirt', 'top'], tier: RARITY.common, points: 90 },
-    { name: 'scissors', aliases: [], tier: RARITY.common, points: 120 },
-    { name: 'stapler', aliases: [], tier: RARITY.common, points: 150 },
-    { name: 'spoon', aliases: [], tier: RARITY.common, points: 180 },
-    { name: 'sock', aliases: [], tier: RARITY.common, points: 200 },
-    { name: 'toaster', aliases: [], tier: RARITY.uncommon, points: 240 },
-    { name: 'remote control', aliases: ['remote'], tier: RARITY.uncommon, points: 320 },
-    { name: 'refrigerator', aliases: ['fridge'], tier: RARITY.uncommon, points: 360 },
-    { name: 'stuffed animal', aliases: ['plushie', 'teddy bear'], tier: RARITY.uncommon, points: 400 },
-    { name: 'stopwatch', aliases: ['timer'], tier: RARITY.rare, points: 450 },
-    { name: 'router', aliases: ['wifi router'], tier: RARITY.rare, points: 500 },
-    { name: 'skateboard', aliases: ['longboard'], tier: RARITY.rare, points: 550 },
-    { name: 'sunglasses', aliases: ['shades'], tier: RARITY.rare, points: 600 },
-    { name: 'telescope', aliases: [], tier: RARITY.superRare, points: 680 },
-    { name: 'record player', aliases: ['turntable'], tier: RARITY.superRare, points: 740 },
-    { name: 'saxophone', aliases: ['horn'], tier: RARITY.superRare, points: 800 },
-    { name: 'typewriter', aliases: [], tier: RARITY.ultraRare, points: 890 },
-    { name: 'rotary phone', aliases: ['telephone'], tier: RARITY.ultraRare, points: 950 },
-    { name: 'robot', aliases: ['robotic arm'], tier: RARITY.ultraRare, points: 1000 },
+    { name: 'paper clip', aliases: ['paperclip'], tier: RARITY.common, points: 1 },
+    { name: 'pencil', aliases: [], tier: RARITY.common, points: 66 },
+    { name: 'pen', aliases: ['ballpoint pen', 'marker'], tier: RARITY.common, points: 167 },
+    { name: 'notebook', aliases: ['journal'], tier: RARITY.uncommon, points: 283 },
+    { name: 'mug', aliases: ['coffee mug', 'cup'], tier: RARITY.uncommon, points: 333 },
+    { name: 'book', aliases: ['textbook', 'paperback'], tier: RARITY.uncommon, points: 384 },
+    { name: 'water bottle', aliases: ['hydro flask', 'bottle'], tier: RARITY.rare, points: 414 },
+    { name: 'backpack', aliases: ['bag', 'bookbag'], tier: RARITY.rare, points: 464 },
+    { name: 'sneakers', aliases: ['shoes', 'sneaker', 'shoe'], tier: RARITY.rare, points: 514 },
+    { name: 'headphones', aliases: ['earbuds', 'airpods'], tier: RARITY.rare, points: 546 },
+    { name: 'guitar', aliases: ['acoustic guitar', 'electric guitar'], tier: RARITY.superRare, points: 601 },
+    { name: 'smartwatch', aliases: ['watch', 'apple watch'], tier: RARITY.superRare, points: 581 },
+    { name: 'bicycle', aliases: ['bike'], tier: RARITY.superRare, points: 617 },
+    { name: 'tablet', aliases: ['ipad'], tier: RARITY.superRare, points: 617 },
+    { name: 'television', aliases: ['tv'], tier: RARITY.superRare, points: 631 },
+    { name: 'smartphone', aliases: ['phone', 'iphone', 'cell phone'], tier: RARITY.superRare, points: 660 },
+    { name: 'laptop', aliases: ['macbook', 'computer'], tier: RARITY.superRare, points: 681 },
+    { name: 'camera', aliases: ['dslr', 'mirrorless camera'], tier: RARITY.superRare, points: 697 },
+    { name: 'piano', aliases: ['upright piano'], tier: RARITY.ultraRare, points: 784 },
+    { name: 'motorcycle', aliases: ['motorbike'], tier: RARITY.ultraRare, points: 834 },
+    { name: 'car', aliases: ['sedan', 'suv', 'tesla'], tier: RARITY.ultraRare, points: 914 },
+    { name: 'grand piano', aliases: [], tier: RARITY.ultraRare, points: 951 },
   ],
 } as const;
 
-export const rounds = [blue, electricity, startLetter] as const;
+export const rounds = [blue, electricity, price] as const;
 export const TOTAL_ROUNDS = rounds.length;
 export type Category = typeof rounds[number];
 type DictionaryItem = { name: string; aliases: readonly string[]; tier: (typeof RARITY)[keyof typeof RARITY]; points: number };
+
+// The reveal tag for a score in a round: the name of its 200-point band.
+export function tierName(points: number, prompt: string) {
+  const index = Math.min(4, Math.max(0, Math.ceil(points / 200) - 1));
+  return points > 0 ? (rounds.find(round => round.prompt === prompt) ?? blue).tiers[index] : undefined;
+}
 
 export function findItem(label: string, category: Category = blue) {
   const words = label.toLowerCase().trim().replace(/^(a|an|the|blue)\s+/, '').replace(/\s+/g, ' ');

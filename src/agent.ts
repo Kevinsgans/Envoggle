@@ -514,7 +514,7 @@ export default defineAgent({
             if (first.phase === 'hunt' && !readyMedia()) await api(0, 'drop', {});
             let announcement = '';
             if (first.phase === 'hunt') {
-              announcement = `Round ${first.stage} of ${first.totalRounds}: ${first.prompt}. Find the rarest thing you can and hold it up when time runs out. Go!`;
+              announcement = `Round ${first.stage} of ${first.totalRounds}: ${first.prompt}. ${first.goal} and hold it up when time runs out. Go!`;
               if (capturedRound !== first.round) {
                 capturedRound = first.round;
                 clearTimeout(captureTimer);
