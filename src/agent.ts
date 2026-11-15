@@ -302,9 +302,12 @@ export default defineAgent({
       if (!accepted.ok) throw new Error(`Challenge acceptance failed with HTTP ${accepted.status}`);
       code = next;
       const state = await api(0, 'state');
-      say(state.retentionEnabled && !split()
-        ? 'Both players are in. Vision training is optional. Envoggle may license or sell confirmed images and labels to third parties for vision model training. Say start to play, or say start and save my frame to opt in.'
-        : 'Say start.');
+      if (state.retentionEnabled && !split()) {
+        say('Both players are in. Vision training is optional. Envoggle may license or sell confirmed images and labels to third parties for vision model training. Say start to play, or say start and save my frame to opt in.');
+        return;
+      }
+      // No start screen: round 1 begins as soon as the names are in.
+      for (const player of slots) await api(player, 'ready', { retain: false });
     }
 
     async function command(slot: number, transcript: string) {
