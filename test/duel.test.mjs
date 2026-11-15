@@ -27,21 +27,20 @@ async function settle() {
   await new Promise(resolve => setImmediate(resolve));
 }
 
-test('uses the last locked frames and scores the top guess for known and unlisted items', async ({ mock }) => {
+test('scores the best matching item in each last locked frame, holding dictionary items to their band', async ({ mock }) => {
   const previous = process.env.GEMINI_API_KEY;
+  const anthropic = process.env.ANTHROPIC_API_KEY;
+  delete process.env.ANTHROPIC_API_KEY; // the mock answers Gemini-shaped requests
   process.env.GEMINI_API_KEY = 'test-fixture';
   try {
     const captures = [];
     mock.method(globalThis, 'fetch', async (_url, request) => {
-      const [prompt, image] = JSON.parse(request.body).contents[0].parts;
+      const [, image] = JSON.parse(request.body).contents[0].parts;
       const frame = Buffer.from(image.inlineData.data, 'base64').toString();
       captures.push(frame);
-      if (prompt.text.startsWith('Identify')) return frame === final.toString()
-        ? json({ guesses: ['bandoneon', 'concertina', 'accordion'] })
-        : json({ guesses: ['gel pen', 'pencil', 'marker'] });
       return frame === final.toString()
-        ? json({ eligible: true, canonicalLabel: 'bandoneon', points: 40, reason: 'An unusual instrument.', safeToRetain: false })
-        : json({ eligible: true, canonicalLabel: 'pen', points: 40, reason: 'A blue pen.', safeToRetain: false });
+        ? json({ items: [{ label: 'pen', points: 150, reason: 'A blue pen.' }, { label: 'bandoneon', points: 870, reason: 'An unusual instrument.' }], safeToRetain: false })
+        : json({ items: [{ label: 'gel pen', points: 640, reason: 'A blue pen.' }], safeToRetain: false });
     });
     const duel = start(mock);
     assert.equal(duel.lock(0, first, 1), true);
@@ -53,12 +52,14 @@ test('uses the last locked frames and scores the top guess for known and unliste
     await settle();
     assert.equal(duel.phase, 'result');
     assert.equal(duel.confirm(0, 'accept'), false);
-    assert.deepEqual(duel.results.map(result => [result.label, result.points, result.unlisted]), [['bandoneon', 40, true], ['pen', 10, false]]);
+    assert.deepEqual(duel.results.map(result => [result.label, result.points, result.unlisted]), [['bandoneon', 870, true], ['pen', 200, false]]);
+    assert.equal(captures.length, 2);
     assert.equal(captures.includes(first.toString()), false);
     assert.deepEqual(duel.frame(0), final);
   } finally {
     if (previous === undefined) delete process.env.GEMINI_API_KEY;
     else process.env.GEMINI_API_KEY = previous;
+    if (anthropic !== undefined) process.env.ANTHROPIC_API_KEY = anthropic;
   }
 });
 

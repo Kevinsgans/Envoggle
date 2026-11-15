@@ -3,10 +3,15 @@ import { AutoSubscribe, ServerOptions, cli, defineAgent, stt, tts } from '@livek
 import { beta as gemini } from '@livekit/agents-plugin-google';
 import { STT, TTS } from '@livekit/agents-plugin-openai';
 import {
-  AudioSource, AudioStream, LocalAudioTrack, LocalVideoTrack, RoomEvent, TrackKind, TrackPublishOptions,
+  AudioFrame, AudioSource, AudioStream, LocalAudioTrack, LocalVideoTrack, RoomEvent, TrackKind, TrackPublishOptions,
   TrackSource, VideoBufferType, VideoFrame, VideoRotation, VideoSource, VideoStream,
 } from '@livekit/rtc-node';
-import { writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { promisify } from 'node:util';
 import sharp from 'sharp';
 import type { Duel } from './duel.js';
 
@@ -25,11 +30,35 @@ const autoAssign = !matchers.some(matcher => matcher.identity || matcher.audio |
 // Words the players say to the referee, to bias Gemini transcription.
 const vocabulary = ['Envoggle', 'start', 'start and save my frame', 'rematch'];
 // In a Group FaceTime call, Chert (beta.21) sends one capture of its FaceTime window with player 1
-// in the left tile and player 2 in the right tile. Tile edges as fractions of that window frame.
-const tiles = [
-  { left: 0.334, right: 0.490, top: 0.280, bottom: 0.562 },
-  { left: 0.510, right: 0.666, top: 0.280, bottom: 0.562 },
-];
+// in the left tile and player 2 in the right tile. The window size varies, so the tiles are found
+// in each checked frame: the widest band of lit rows, split into exactly two similar lit column spans.
+type Tile = { left: number; right: number; top: number; bottom: number };
+function findTiles(data: Buffer, width: number, height: number, channels: number): Tile[] | undefined {
+  const lit = (x: number, y: number) => data[(y * width + x) * channels] > 8;
+  const runs = (values: number[], test: (value: number) => boolean, min: number) => {
+    const found: [number, number][] = [];
+    let start = -1;
+    values.forEach((value, index) => {
+      if (test(value) && start < 0) start = index;
+      if (!test(value) && start >= 0) { if (index - start >= min) found.push([start, index - 1]); start = -1; }
+    });
+    if (start >= 0 && values.length - start >= min) found.push([start, values.length - 1]);
+    return found;
+  };
+  const rows = Array.from({ length: height }, (_, y) => { let count = 0; for (let x = 0; x < width; x++) if (lit(x, y)) count++; return count; });
+  const peak = Math.max(...rows);
+  if (peak < width * 0.15) return undefined;
+  const band = runs(rows, count => count >= peak * 0.6, height * 0.15).sort((a, b) => (b[1] - b[0]) - (a[1] - a[0]))[0];
+  if (!band) return undefined;
+  const [top, bottom] = band;
+  const columns = Array.from({ length: width }, (_, x) => { let count = 0; for (let y = top; y <= bottom; y++) if (lit(x, y)) count++; return count / (bottom - top + 1); });
+  const spans = runs(columns, share => share > 0.5, width * 0.08);
+  if (spans.length !== 2) return undefined;
+  const [a, b] = spans.map(([start, end]) => end - start + 1);
+  if (Math.min(a, b) / Math.max(a, b) < 0.7 || spans[1][0] - spans[0][1] > width * 0.1) return undefined;
+  // Inset by 1% to skip the tiles' rounded corners.
+  return spans.map(([start, end]) => ({ left: start / width + 0.01, right: (end + 1) / width - 0.01, top: top / height + 0.01, bottom: (bottom + 1) / height - 0.01 }));
+}
 // Lock both players this long before the server's deadline, which rejects later locks.
 const captureLead = 900;
 
@@ -67,15 +96,19 @@ export default defineAgent({
     const audioTracks = new Map<number, string>();
     const stopReaders = new Map<string, () => void>();
     const autoSlots = new Map<string, number>();
-    const speaker: tts.TTS = openai
+    // Voice: OpenAI when OPENAI_API_KEY is set; otherwise the Mac's built-in `say` (free, no quota;
+    // free-tier Gemini speech allows only 10 requests a day). ENVOGGLE_VOICE=gemini forces Gemini.
+    const localVoice = !openai && process.platform === 'darwin' && process.env.ENVOGGLE_VOICE !== 'gemini';
+    const speaker: tts.TTS | undefined = openai
       ? new TTS({ model: 'gpt-4o-mini-tts', voice: 'alloy' })
-      : new gemini.TTS({ apiKey: geminiKey, voiceName: 'Puck' });
+      : localVoice ? undefined : new gemini.TTS({ apiKey: geminiKey, voiceName: 'Puck' });
     const listener: stt.STT = openai
       ? new STT({ model: 'gpt-4o-mini-transcribe', useRealtime: true, language: 'en' })
       : new gemini.GeminiSTT({ apiKey: geminiKey, language: 'en-US', sampleRate: 16000, customVocabulary: vocabulary });
     const listenRate = openai ? 24000 : 16000;
-    console.info('[envoggle] Speech:', openai ? 'OpenAI' : 'Gemini', 'Players:', autoAssign ? 'auto-assigned by participant' : 'from CHERT_PLAYER_* settings');
-    const audio = new AudioSource(speaker.sampleRate, speaker.numChannels);
+    console.info('[envoggle] Speech:', openai ? 'OpenAI' : localVoice ? 'Gemini listening, Mac voice' : 'Gemini', 'Players:', autoAssign ? 'auto-assigned by participant' : 'from CHERT_PLAYER_* settings');
+    const voiceRate = 24000;
+    const audio = new AudioSource(speaker?.sampleRate ?? voiceRate, speaker?.numChannels ?? 1);
     const video = new VideoSource(tileWidth, tileHeight);
     const output = new AbortController();
     let code = '';
@@ -91,6 +124,8 @@ export default defineAgent({
     let creating = false;
     let lastCreate = 0;
     let layoutSeen = 0;
+    let layoutLogged = 0;
+    let tiles: Tile[] = [];
     let layoutChecked = 0;
     let capturedRound = -1;
     let captureTimer: ReturnType<typeof setTimeout> | undefined;
@@ -110,10 +145,30 @@ export default defineAgent({
       return response.json();
     }
 
+    // Renders speech with macOS `say` to 16-bit mono PCM and plays it in 20 ms frames.
+    async function speakLocally(text: string) {
+      const file = join(tmpdir(), `envoggle-${randomUUID()}.wav`);
+      try {
+        await promisify(execFile)('say', ['-o', file, '--file-format=WAVE', `--data-format=LEI16@${voiceRate}`, text]);
+        const wav = await readFile(file);
+        let offset = 12;
+        while (offset + 8 <= wav.length && wav.toString('ascii', offset, offset + 4) !== 'data') offset += 8 + wav.readUInt32LE(offset + 4);
+        const start = offset + 8;
+        const samples = new Int16Array(wav.buffer.slice(wav.byteOffset + start, wav.byteOffset + start + Math.floor((wav.length - start) / 2) * 2));
+        const step = voiceRate / 50;
+        for (let index = 0; index < samples.length && !output.signal.aborted; index += step) {
+          const chunk = new Int16Array(step);
+          chunk.set(samples.subarray(index, index + step));
+          await audio.captureFrame(new AudioFrame(chunk, voiceRate, 1, step));
+        }
+      } finally { await rm(file, { force: true }); }
+    }
+
     function say(text: string) {
       if (output.signal.aborted) return;
       speech = speech.then(async () => {
         if (output.signal.aborted) return;
+        if (!speaker) return speakLocally(text);
         const stream = speaker.synthesize(text, undefined, output.signal);
         try { for await (const sound of stream) await audio.captureFrame(sound.frame); }
         finally { stream.close(); }
@@ -129,8 +184,7 @@ export default defineAgent({
       ? freshCamera(0) && audioTracks.size > 0
       : slots.every(slot => fresh(slot) && audioTracks.has(slot));
 
-    // Checks at most twice a second whether the single feed shows two tiles: black gap between
-    // them, black window margins beside them, and picture in at least one tile.
+    // Checks at most twice a second whether the single feed shows the two-tile group layout.
     async function checkLayout() {
       const camera = cameras.get(0);
       if (!autoAssign || videoTracks.size !== 1 || !camera || Date.now() - layoutChecked < 500) return;
@@ -138,22 +192,18 @@ export default defineAgent({
       const rgba = camera.frame.convert(VideoBufferType.RGBA);
       const { data, info } = await sharp(rgba.data, { raw: { width: rgba.width, height: rgba.height, channels: 4 } })
         .resize(320, 180, { fit: 'fill' }).toColourspace('b-w').raw().toBuffer({ resolveWithObject: true });
-      const area = (x0: number, x1: number, y0: number, y1: number) => {
-        let sum = 0, squares = 0, count = 0;
-        for (let y = Math.round(y0 * info.height); y < Math.round(y1 * info.height); y++) {
-          for (let x = Math.round(x0 * info.width); x < Math.round(x1 * info.width); x++) {
-            const value = data[(y * info.width + x) * info.channels];
-            sum += value; squares += value * value; count++;
-          }
-        }
-        const mean = sum / count;
-        return { mean, spread: Math.sqrt(Math.max(0, squares / count - mean * mean)) };
-      };
-      const dark = (region: { mean: number; spread: number }) => region.mean < 12 && region.spread < 10;
-      const picture = (region: { mean: number; spread: number }) => region.mean > 12 || region.spread > 6;
-      const [left, right] = tiles.map(tile => area(tile.left + 0.01, tile.right - 0.01, tile.top + 0.01, tile.bottom - 0.01));
-      if (dark(area(0.495, 0.505, 0.30, 0.54)) && dark(area(0.26, 0.32, 0.30, 0.54)) && dark(area(0.68, 0.74, 0.30, 0.54))
-        && (picture(left) || picture(right))) {
+      const found = findTiles(data, info.width, info.height, info.channels);
+      if (!found && process.env.ENVOGGLE_DEBUG_FRAMES && Date.now() - layoutLogged > 5000) {
+        layoutLogged = Date.now();
+        const profile = Array.from({ length: 15 }, (_, row) => {
+          let count = 0;
+          for (let x = 0; x < info.width; x++) if (data[(row * 12 * info.width + x) * info.channels] > 8) count++;
+          return count;
+        });
+        console.info('[envoggle] No two-tile layout in', rgba.width, 'x', rgba.height, 'channels', info.channels, 'lit per row', profile.join(' '));
+      }
+      if (found) {
+        tiles = found;
         if (!split()) console.info('[envoggle] Two-tile group layout found in a', rgba.width, 'x', rgba.height, 'feed');
         layoutSeen = Date.now();
       }
@@ -432,7 +482,7 @@ export default defineAgent({
       output.abort();
       stopReaders.forEach(stop => stop());
       if (code && states[0]?.phase === 'hunt') await api(0, 'drop', {}).catch(() => {});
-      await Promise.allSettled([speaker.close(), listener.close(), audio.close(), video.close()]);
+      await Promise.allSettled([speaker?.close(), listener.close(), audio.close(), video.close()]);
     });
   },
 });

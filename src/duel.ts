@@ -1,16 +1,15 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { blue } from './categories.js';
-import { identify, score } from './judge.js';
+import { judgeFind, type Result } from './judge.js';
 
 type Entry = { frame?: Buffer; lockedAt?: number; guesses?: string[]; options?: boolean; label?: string; done: boolean };
 type Player = { token: string; ready: boolean; retain: boolean };
-type Result = Awaited<ReturnType<typeof score>>;
 type Phase = 'lobby' | 'hunt' | 'confirm' | 'scoring' | 'result' | 'void';
 const empty = (): [Entry, Entry] => [{ done: false }, { done: false }];
 const blank = (): Player => ({ token: randomUUID(), ready: false, retain: false });
 
-export const HUNT_DURATION_MS = 60_000;
+export const HUNT_DURATION_MS = 30_000;
 export class Duel {
   readonly players = [blank(), blank()];
   accepted = false;
@@ -71,25 +70,8 @@ export class Duel {
 
   private async finish() {
     if (this.phase !== 'hunt') return;
-    this.phase = 'confirm';
-    const entries = this.entries;
-    try {
-      await Promise.all(entries.map(async entry => {
-        if (!entry.frame) {
-          entry.done = true;
-          return;
-        }
-        // No confirmation step: Gemini's top guess is scored against the same frame.
-        entry.guesses = await identify(entry.frame);
-        entry.label = entry.guesses[0];
-        entry.done = true;
-      }));
-      if (this.entries !== entries || this.phase !== 'confirm') return;
-      void this.reveal();
-    } catch (error) {
-      console.error('[envoggle] Identification failed', error instanceof Error ? error.message : '');
-      if (this.entries === entries) this.void('The referee could not identify the finds. Try a rematch.');
-    }
+    // No confirmation step: each locked frame is named and scored in one model call.
+    void this.reveal();
   }
 
   confirm(slot: number, action: string, value?: string) {
@@ -115,9 +97,9 @@ export class Duel {
     this.phase = 'scoring';
     const entries = this.entries;
     try {
-      const judge = (entry: Entry): Promise<Result> => entry.frame && entry.label
-        ? score(entry.frame, entry.label)
-        : Promise.resolve({ label: 'No confirmed find', points: 0, reason: 'No item was confirmed.', unlisted: false, safeToRetain: false });
+      const judge = (entry: Entry): Promise<Result> => entry.frame
+        ? judgeFind(entry.frame)
+        : Promise.resolve({ label: 'No find', points: 0, reason: 'No camera view was captured.', unlisted: false, safeToRetain: false });
       const results = await Promise.all([judge(entries[0]), judge(entries[1])]);
       if (entries !== this.entries || this.phase !== 'scoring') return;
       this.results = results;
