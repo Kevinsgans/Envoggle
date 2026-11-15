@@ -19,6 +19,7 @@ import type { Duel } from './duel.js';
 import { focusProgress, scanProgress, type Photo } from './find-visual.js';
 import { GROUP_CALL_JOB, GROUP_REFEREE } from './group-call.js';
 import { findTiles, type Tile } from './layout.js';
+import { RoomServiceClient } from 'livekit-server-sdk';
 import { Recorder } from './recorder.js';
 import { COUNT_UP_MS } from './score-display.js';
 import { DEFAULT_NAMES, TILE_HEIGHT, TILE_WIDTH, renderTile, type View } from './tile.js';
@@ -44,6 +45,8 @@ const tileWidth = TILE_WIDTH;
 const tileHeight = TILE_HEIGHT;
 // How long the last round's reveal shows before the final scores screen.
 const FINAL_AFTER_MS = 12_000;
+// A player has left when FaceTime has shown one person full-screen this long; the call then ends.
+const LEFT_AFTER_MS = 5_000;
 // No "continue": the next round starts on its own this long after a reveal (or a void round).
 const NEXT_ROUND_MS = 10_000;
 const REPLAY_MS = 5_000;
@@ -140,6 +143,8 @@ export default defineAgent({
     let creating = false;
     let lastCreate = 0;
     let layoutSeen = 0;
+    // When FaceTime started showing one person full-screen (after the two-tile layout): someone left.
+    let aloneSince = 0;
     let layoutLogged = 0;
     let tiles: Tile[] = [];
     let layoutChecked = 0;
@@ -271,6 +276,12 @@ export default defineAgent({
         });
         console.info('[envoggle] No two-tile layout in', rgba.width, 'x', rgba.height, 'channels', info.channels, 'lit per row', profile.join(' '));
       }
+      // One person full-screen lights far more of the frame (about 37%) than two tiles (11 to 22%); a
+      // covered or dark camera lights less, so it never counts as someone leaving.
+      let lit = 0;
+      for (let index = 0; index < data.length; index += info.channels) if (data[index] > 8) lit++;
+      const alone = !found && layoutSeen > 0 && lit / (info.width * info.height) > 0.3;
+      aloneSince = alone ? aloneSince || Date.now() : 0;
       if (found) {
         tiles = found;
         if (!split()) console.info('[envoggle] Two-tile group layout found in a', rgba.width, 'x', rgba.height, 'feed');
@@ -439,7 +450,27 @@ export default defineAgent({
     room.on(RoomEvent.TrackMuted, publication => {
       for (const [slot, sid] of videoTracks) if (sid === publication.sid) cameras.delete(slot);
     });
-    room.on(RoomEvent.ParticipantDisconnected, participant => { autoSlots.delete(participant.identity); });
+    // When someone leaves, end the call for everyone: closing the LiveKit room disconnects the Chert
+    // bridge, which hangs up FaceTime.
+    let hangingUp = false;
+    async function hangUp(reason: string) {
+      if (hangingUp) return;
+      hangingUp = true;
+      console.info('[envoggle] Ending the call:', reason);
+      const { LIVEKIT_URL: url, LIVEKIT_API_KEY: key, LIVEKIT_API_SECRET: secret } = process.env;
+      try {
+        if (!url || !key || !secret) throw new Error('LiveKit keys missing');
+        await new RoomServiceClient(url, key, secret, { requestTimeout: 5 }).deleteRoom(room.name!);
+      } catch (error) {
+        console.warn('[envoggle] Could not close the room:', error instanceof Error ? error.message : '');
+        context.shutdown('player left');
+      }
+    }
+    room.on(RoomEvent.ParticipantDisconnected, participant => {
+      const player = autoSlots.has(participant.identity);
+      autoSlots.delete(participant.identity);
+      if (player && bridgeReady(room.metadata)) void hangUp('a player left');
+    });
 
     // Chert ends a call that hears no agent audio within 10 s of bridge_ready, which chert dev
     // signals in the room metadata. Greet once on that signal, never just because someone joined.
@@ -545,6 +576,8 @@ export default defineAgent({
       ticking = true;
       try {
         await checkLayout();
+        // Group call: one person full-screen for a few seconds, after the two-tile layout, means a player left.
+        if (aloneSince && Date.now() - aloneSince > LEFT_AFTER_MS && bridgeReady(room.metadata)) void hangUp('a player left the group call');
         if (outboundGroup && !bridgeReady(room.metadata)) {
           await scoreboard();
           return;
