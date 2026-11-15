@@ -56,7 +56,9 @@ const server = createServer(async (request, response) => {
     if (request.method === 'GET') {
       if (action === 'state') return json(200, duel.state(slot));
       if (action === 'frame') {
-        const frame = duel.frame(Number(url.searchParams.get('player')));
+        const player = url.searchParams.get('player');
+        const round = url.searchParams.get('round');
+        const frame = player === '0' || player === '1' ? duel.frame(Number(player), round === null ? undefined : Number(round)) : undefined;
         if (!frame) return json(404, { error: 'Frame unavailable' });
         response.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store' });
         return response.end(frame);

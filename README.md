@@ -40,6 +40,10 @@ Retention is disabled unless `TRAINING_DATA_DIR` is configured. If enabled, the 
 
 ## Verification
 
+Use `npm run preview` and open `http://127.0.0.1:4173` to inspect the current FaceTime referee tile with sample data. Click **Play scan and reveal** to see both finds scanned, rotated and outlined, then watch the scores count up before the reveal. Use **Play countdown** to see the hunt lead into the same animation. The safe-area toggle shows the center region where the tile keeps important content. The sample preview uses the live tile renderer and needs no FaceTime call or credentials. After editing `src/tile.ts`, run `npm run build` in a second terminal and refresh the preview.
+
+Under **Test with your photos**, capture or choose a photo for each player and click **Render my photos**. Rendering sends both photos to the judge configured in `.env` using `ANTHROPIC_API_KEY` or `GEMINI_API_KEY`. **Replay my photos** plays the cached result without another judge request. The preview server keeps the photos in memory for up to 30 minutes.
+
 `npm test` runs the TypeScript build and the round tests with mocked model responses. To compile the native targets without device signing:
 
 ```bash

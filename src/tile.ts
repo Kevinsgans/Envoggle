@@ -1,4 +1,6 @@
 import { RARITY } from './categories.js';
+import { renderPhoto, type FindGeometry, type Photo } from './find-visual.js';
+import { countUpScore, renderScore } from './score-display.js';
 
 // The referee's video tile: 720 x 1280 portrait. FaceTime crops it to fill the screen or a group
 // tile, so everything stays inside the centre 560 x 720 (x 80-640, y 280-1000).
@@ -21,14 +23,15 @@ const tierColors: Record<string, string> = {
 };
 
 type Result = { label: string; points: number };
+type Finds = { names: string[]; prompt: string; photos: (Photo | undefined)[]; finds?: (FindGeometry | undefined | null)[] };
 export type View =
   | { kind: 'waiting'; present: boolean[] }
   | { kind: 'message'; title: string; detail: string }
   | { kind: 'names'; names: (string | undefined)[]; turn: number; frames: (Buffer | undefined)[] }
   | { kind: 'ready'; names: string[]; prompt: string }
   | { kind: 'hunt'; names: string[]; prompt: string; seconds: number; total: number; locked: boolean[] }
-  | { kind: 'scoring'; names: string[] }
-  | { kind: 'reveal'; names: string[]; prompt: string; results: Result[]; frames: (Buffer | undefined)[] };
+  | (Finds & { kind: 'scoring'; focus: number; scan?: number; countUp?: { elapsed: number; targets: (number | null)[] } })
+  | (Finds & { kind: 'reveal'; results: Result[] });
 
 export function escapeXml(value: string) {
   return value.replace(/[<>&"']/g, character => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[character]!);
@@ -110,41 +113,49 @@ function ring(seconds: number, total: number, color: string, size: number, numbe
 const mic = (cx: number, top: number, color: string) =>
   `<g transform="translate(${cx - 22} ${top})"><rect x="12" y="2" width="20" height="34" rx="10" fill="none" stroke="${color}" stroke-width="5"/><path d="M4 28 a18 18 0 0 0 36 0 M22 46 v12" fill="none" stroke="${color}" stroke-width="5"/></g>`;
 
-function reveal(view: Extract<View, { kind: 'reveal' }>) {
-  const [a, b] = view.results;
-  const winner = a.points === b.points ? -1 : a.points > b.points ? 0 : 1;
-  const headline = winner < 0 ? 'Draw' : `${view.names[winner]} wins`;
+function findCards(view: Extract<View, { kind: 'scoring' | 'reveal' }>) {
+  const results = view.kind === 'reveal' ? view.results : undefined;
+  const winner = !results || results[0].points === results[1].points ? -1 : results[0].points > results[1].points ? 0 : 1;
+  const headline = !results ? 'Scoring' : winner < 0 ? 'Draw' : `${view.names[winner]} wins`;
+  const focus = view.kind === 'reveal' ? 1 : view.focus;
+  const scan = view.kind === 'scoring' ? view.scan : undefined;
+  const countUp = view.kind === 'scoring' ? view.countUp : undefined;
   const cards = {
     height: 520,
-    draw: (top: number) => view.results.map((result, slot) => {
+    draw: (top: number) => view.names.map((name, slot) => {
       const x = 80 + slot * 288;
-      const frame = view.frames[slot];
-      const tier = result.points > 0 ? tierOf(result.points) : undefined;
-      const labelLines = wrap(result.label, 15);
+      const result = results?.[slot];
+      const photo = view.photos[slot];
+      const tier = result ? tierOf(result.points) : undefined;
       const lose = winner >= 0 && winner !== slot;
       let out = `<rect x="${x}" y="${top}" width="272" height="520" fill="${card}"/>`;
-      out += frame
-        ? `<clipPath id="f${slot}"><rect x="${x}" y="${top + 8}" width="272" height="292"/></clipPath><image x="${x}" y="${top + 8}" width="272" height="292" preserveAspectRatio="xMidYMid slice" clip-path="url(#f${slot})" href="data:image/jpeg;base64,${frame.toString('base64')}" xlink:href="data:image/jpeg;base64,${frame.toString('base64')}"/>`
+      out += photo
+        ? `<g transform="translate(${x} ${top + 8})">${renderPhoto(`f${slot}`, photo, view.finds?.[slot] ?? undefined, focus, scan)}</g>`
         : `<rect x="${x}" y="${top + 8}" width="272" height="292" fill="#222D3B"/>` + text('No frame', x + 136, top + 140, 24, { fill: '#8A97A6' });
       out += `<rect x="${x}" y="${top}" width="272" height="8" fill="${COLORS[slot]}"/>`;
       if (winner === slot) out += `<rect x="${x - 2}" y="${top - 2}" width="276" height="524" fill="none" stroke="${COLORS[slot]}" stroke-width="4"/>`;
       const body = top + 316;
-      out += text(view.names[slot].slice(0, 14), x + 18, body, 26, { weight: 800, fill: COLORS[slot], anchor: 'start' });
-      out += labelLines.map((line, index) => text(line, x + 18, body + 34 + index * 30, 26, { weight: 700, fill: lose ? soft : ink, anchor: 'start' })).join('');
-      out += text(String(result.points), x + 18, body + 108, 56, { weight: 800, fill: lose ? soft : ink, anchor: 'start' });
+      out += text(name.slice(0, 14), x + 18, body, 26, { weight: 800, fill: COLORS[slot], anchor: 'start' });
+      const target = countUp?.targets[slot];
+      const score = result?.points ?? (countUp && target != null ? countUpScore(countUp.elapsed, target) : undefined);
+      if (score !== undefined) {
+        out += `<g transform="translate(${x + 18} ${body + 106})">${renderScore(score)}</g>`;
+      }
+      if (!result) return out;
+      out += wrap(result.label, 15).map((line, index) => text(line, x + 18, body + 34 + index * 30, 26, { weight: 700, fill: lose ? soft : ink, anchor: 'start' })).join('');
       if (tier) {
         const width = tier.length * 13 + 24;
-        out += `<rect x="${x + 10}" y="${top + 256}" width="${width}" height="34" fill="${tierColors[tier]}"/>` +
-          text(tier.toUpperCase(), x + 10 + width / 2, top + 263, 18, { weight: 700, fill: ground, spacing: 1 });
+        out += `<rect x="${x + 18}" y="${body + 156}" width="${width}" height="28" fill="${tierColors[tier]}"/>` +
+          text(tier.toUpperCase(), x + 18 + width / 2, body + 162, 18, { weight: 700, fill: ground, spacing: 1 });
       }
-      out += `<rect x="${x + 18}" y="${body + 178}" width="236" height="8" fill="#26313F"/><rect x="${x + 18}" y="${body + 178}" width="${Math.round(236 * Math.min(1, result.points / 1000))}" height="8" fill="${COLORS[slot]}"/>`;
+      out += `<rect x="${x + 18}" y="${body + 190}" width="236" height="6" fill="#26313F"/><rect x="${x + 18}" y="${body + 190}" width="${Math.round(236 * Math.min(1, result.points / 1000))}" height="6" fill="${COLORS[slot]}"/>`;
       return out;
     }).join(''),
   };
   return stack([
     { height: 112, draw: top => text(view.prompt.toUpperCase(), TILE_WIDTH / 2, top, 22, { weight: 700, fill: muted, spacing: 4 }) + text(headline, TILE_WIDTH / 2, top + 36, 76, { weight: 800, fill: winner < 0 ? ink : COLORS[winner] }) },
     cards,
-    { height: 30, draw: top => text('Say “rematch” to play again', TILE_WIDTH / 2, top, 28, { fill: muted }) },
+    { height: 30, draw: top => results ? text('Say “rematch” to play again', TILE_WIDTH / 2, top, 28, { fill: muted }) : '' },
   ], 26);
 }
 
@@ -211,14 +222,6 @@ export function renderTile(view: View) {
         ring(view.seconds, view.total, lime, 340, 170, 'seconds'),
         players(view.names, view.locked.map(locked => locked ? 'Captured' : 'Hunting')),
       ], 40);
-  } else if (view.kind === 'scoring') {
-    body = stack([
-      { height: 24, draw: top => logo(center, top) },
-      { height: 120, draw: top => text('Time', center, top, 120, { weight: 800 }) },
-      { height: 44, draw: top => text('Rating every find in each frame', center, top, 32, { fill: muted }) },
-      { height: 22, draw: top => [COLORS[0], '#5B6878', COLORS[1]].map((color, index) => `<rect x="${center - 51 + index * 40}" y="${top}" width="22" height="22" fill="${color}"/>`).join('') },
-      players(view.names, ['Frame captured', 'Frame captured']),
-    ], 48);
-  } else body = reveal(view);
+  } else body = findCards(view);
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${TILE_WIDTH}" height="${TILE_HEIGHT}"><rect width="${TILE_WIDTH}" height="${TILE_HEIGHT}" fill="${ground}"/>${body}</svg>`;
 }
