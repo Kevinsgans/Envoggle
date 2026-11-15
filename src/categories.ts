@@ -257,8 +257,104 @@ export const weird = {
   ],
 } as const;
 
+// Points from the number of separate pieces in one pack or set on a log scale: 1000 × log10(pieces) / 4.
+// 10 pieces = 250, 100 = 500, 1,000 = 750, 10,000 = 1000.
+export const pieces = {
+  prompt: 'Most pieces',
+  goal: 'Find the pack or set with the most pieces',
+  rule: `The real object scores by how many separate pieces it holds; the pieces must already be together in one pack, box, jar or set. A pile you gather yourself does not count. People and animals do not count. ${SCREEN}`,
+  measure: 'how many separate pieces the pack, box or set shown holds, on a log scale: 1 piece is 1, 10 is 250, 30 is 369, 100 is 500, 1,000 is 750, 3,000 is 869, 10,000 or more is 1000',
+  tiers: ['Single', 'Handful', 'Pack', 'Bulk', 'Countless'],
+  items: [
+    anchor('pencil', ['pen'], 1), anchor('pack of gum', ['gum'], 294), anchor('box of crayons', ['crayons'], 345),
+    anchor('deck of cards', ['playing cards', 'cards'], 429), anchor('sticky notes', ['post-it notes', 'sticky note pad'], 500),
+    anchor('cotton swabs', ['q-tips', 'box of q-tips'], 675), anchor('ream of paper', ['printer paper'], 675), anchor('jigsaw puzzle', ['puzzle'], 750),
+    anchor('box of staples', ['staples'], 925), anchor('bag of rice', ['rice'], 1000),
+  ],
+} as const;
+
+// Points from the number of clearly different colours on a log scale: 1000 × log2(colours) / 5.
+// 2 colours = 200, 4 = 400, 8 = 600, 16 = 800, 32 = 1000.
+export const colours = {
+  prompt: 'Most colours',
+  goal: 'Find the most colourful thing you can',
+  rule: `The real object scores by how many clearly different colours the camera can see on it; shades of one colour count once. A set in one box counts as one object. People and animals do not count. ${SCREEN}`,
+  measure: 'how many clearly different colours it shows, counting black, white and grey, on a log scale: 1 colour is 1, 2 is 200, 4 is 400, 6 is 517, 8 is 600, 16 is 800, 32 or more is 1000',
+  tiers: ['Plain', 'Two-tone', 'Colourful', 'Vivid', 'Rainbow'],
+  items: [
+    anchor('sheet of paper', ['paper'], 1), anchor('pen', ['pencil'], 200), anchor('sneaker', ['shoe', 'sneakers'], 317),
+    anchor('highlighters', ['set of highlighters'], 464), anchor('cereal box', ['cereal'], 517), anchor("rubik's cube", ['rubiks cube', 'puzzle cube'], 517),
+    anchor('tie-dye shirt', ['tie dye shirt'], 600), anchor('markers', ['set of markers', 'marker set'], 717),
+    anchor('box of crayons', ['crayons'], 917), anchor('64 crayons', ['64-pack of crayons', 'big box of crayons'], 1000),
+  ],
+} as const;
+
+// Points from how much liquid it holds when full on a log scale: 1000 × (log10(litres) + 2) / 4.
+// 10 mL = 0, 100 mL = 250, 1 L = 500, 10 L = 750, 100 L = 1000.
+export const liquid = {
+  prompt: 'Holds the most liquid',
+  goal: 'Find the container that holds the most liquid',
+  rule: `The real object must be made to hold liquid, such as a cup, bottle, pot or bucket. It scores by how much it holds when full, not by what is in it now. ${SCREEN}`,
+  measure: 'how much liquid it holds when full, on a log scale: 10 mL is 1, 100 mL is 250, 330 mL is 380, 1 L is 500, 4 L is 651, 10 L is 750, 100 L or more is 1000',
+  tiers: ['Sip', 'Cup', 'Jug', 'Tub', 'Tank'],
+  items: [
+    anchor('shot glass', [], 161), anchor('mug', ['coffee mug', 'cup'], 386), anchor('soda can', ['can', 'can of soda'], 388),
+    anchor('water bottle', ['bottle', 'hydro flask'], 469), anchor('electric kettle', ['kettle'], 558), anchor('2-liter bottle', ['two liter bottle', 'soda bottle'], 575),
+    anchor('gallon jug', ['milk jug', 'gallon of water'], 645), anchor('pot', ['cooking pot', 'saucepan'], 651), anchor('bucket', ['pail'], 750),
+    anchor('water cooler jug', ['5 gallon jug', 'water jug'], 819), anchor('cooler', ['ice chest'], 849),
+  ],
+} as const;
+
+// Points from the hottest temperature reached in normal use on a log scale: 1000 × (log10(°C) − 1) / 2.
+// 10 °C = 0, 100 °C = 500, 1,000 °C = 1000.
+export const hottest = {
+  prompt: 'Hottest thing',
+  goal: 'Find the thing that gets the hottest',
+  rule: `The real object scores by the hottest temperature it, or the water, air or flame it makes, reaches in normal use; it does not need to be hot now. People and animals do not count. ${SCREEN}`,
+  measure: 'the hottest temperature it reaches in normal use, in degrees Celsius on a log scale: 10 °C or colder is 1, 20 °C (room temperature) is 151, 40 °C is 301, 100 °C is 500, 200 °C is 651, 500 °C is 849, 1,000 °C or more is 1000',
+  tiers: ['Cold', 'Warm', 'Hot', 'Scorching', 'Blazing'],
+  items: [
+    anchor('ice pack', ['cold pack'], 1), anchor('pen', ['pencil'], 151), anchor('smartphone', ['phone', 'iphone'], 301), anchor('laptop', ['macbook'], 349),
+    anchor('led bulb', ['light bulb', 'bulb'], 389), anchor('mug', ['coffee mug'], 423), anchor('hair dryer', ['blow dryer'], 452),
+    anchor('electric kettle', ['kettle'], 500), anchor('clothes iron', ['iron'], 651), anchor('hair straightener', ['flat iron', 'curling iron'], 681),
+    anchor('oven', ['toaster oven'], 699), anchor('toaster', [], 889), anchor('lighter', ['candle', 'matches'], 1000),
+  ],
+} as const;
+
+// Points from total caffeine on a log scale: 1000 × log10(mg) / 4. 10 mg = 250, 100 mg = 500, 1,000 mg = 750, 10,000 mg = 1000.
+export const caffeine = {
+  prompt: 'Most caffeine',
+  goal: 'Find the food or drink with the most caffeine',
+  rule: `Real food, drink or pills only, scored by all the caffeine in the container shown. Things without caffeine and empty packaging score nothing. ${SCREEN}`,
+  measure: 'the total caffeine in the food, drink or pills shown (the whole container), in milligrams on a log scale: 1 mg is 1, 10 mg is 250, 35 mg is 386, 100 mg is 500, 300 mg is 619, 1,000 mg is 750, 10,000 mg or more is 1000',
+  tiers: ['Decaf', 'Mild', 'Buzz', 'Wired', 'Jolt'],
+  items: [
+    anchor('milk chocolate bar', ['chocolate bar', 'hershey bar'], 239), anchor('soda can', ['soda', 'coke', 'can of soda'], 383), anchor('tea bag', [], 418),
+    anchor('dark chocolate bar', ['dark chocolate'], 476), anchor('cup of coffee', ['coffee'], 494), anchor('coffee pod', ['k-cup', 'keurig pod'], 500),
+    anchor('energy drink', ['red bull', 'monster'], 551), anchor('cold brew bottle', ['cold brew'], 575), anchor('box of tea bags', ['box of tea'], 743),
+    anchor('instant coffee jar', ['instant coffee'], 886), anchor('bag of ground coffee', ['ground coffee', 'coffee beans'], 901),
+    anchor('pre-workout tub', ['pre-workout'], 945), anchor('caffeine pills', ['bottle of caffeine pills'], 1000),
+  ],
+} as const;
+
+// Points from how many separate numbers are visible on it on a log scale: 1000 × log10(numbers) / 3.
+// 10 numbers ≈ 333, 100 ≈ 667, 1,000 = 1000.
+export const numbers = {
+  prompt: 'Most numbers',
+  goal: 'Find the thing with the most numbers on it',
+  rule: `The real object scores by how many separate numbers are printed or written on it and visible in the frame; count numbers, not digits. People and animals do not count. ${SCREEN}`,
+  measure: 'how many separate numbers are printed or written on it and visible in the frame, on a log scale: 1 number is 1, 3 is 159, 10 is 333, 30 is 492, 100 is 667, 300 is 826, 1,000 or more is 1000',
+  tiers: ['Blank', 'A few', 'Plenty', 'Dense', 'Spreadsheet'],
+  items: [
+    anchor('coin', ['quarter', 'penny'], 100), anchor('clock', ['wall clock', 'watch'], 360), anchor('keyboard', ['computer keyboard'], 447),
+    anchor('receipt', [], 466), anchor('nutrition label', ['food package'], 492), anchor('calendar', ['wall calendar'], 506), anchor('ruler', [], 541),
+    anchor('math textbook page', ['textbook page'], 593), anchor('multiplication chart', ['times table'], 719),
+    anchor('periodic table', ['periodic table poster'], 848), anchor('printed spreadsheet', ['spreadsheet printout'], 900),
+  ],
+} as const;
+
 // Every category; each match plays ROUNDS_PER_MATCH of them, drawn at random.
-export const rounds = [blue, electricity, price, heavy, oldest, loud, calories, longest, weird] as const;
+export const rounds = [blue, electricity, price, heavy, oldest, loud, calories, longest, weird, pieces, colours, liquid, hottest, caffeine, numbers] as const;
 export const ROUNDS_PER_MATCH = 3;
 export type Category = typeof rounds[number];
 
