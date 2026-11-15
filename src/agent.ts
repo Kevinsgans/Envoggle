@@ -8,6 +8,7 @@ import {
 } from '@livekit/rtc-node';
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -40,12 +41,29 @@ const tileWidth = TILE_WIDTH;
 const tileHeight = TILE_HEIGHT;
 const huntSeconds = 30;
 
-// Turns "hi, my name is alex" into "Alex". Returns undefined for anything that is not a name.
+// Names vs ordinary words, from the macOS dictionaries: a word counts as a name if it is a listed
+// first name or not an ordinary lowercase word at all.
+// This drops misheard words like "good" or "focus". Without the dictionaries every word passes.
+function readWords(path: string) {
+  try { return new Set(readFileSync(path, 'utf8').split('\n')); } catch { return new Set<string>(); }
+}
+const firstNames = readWords('/usr/share/dict/propernames');
+const dictionary = readWords('/usr/share/dict/words');
+const nameWords = new Set(['rose', 'ava', 'kai', 'luna', 'aria', 'ivy', 'lily', 'hope', 'faith', 'joy', 'june', 'river', 'sky', 'jade', 'pearl', 'ruby', 'summer', 'autumn', 'dawn', 'maya', 'ming', 'grant', 'chase', 'hunter', 'mark', 'bill', 'pat', 'max', 'jack', 'drew', 'art', 'gene', 'ray', 'rich', 'jay', 'dean']);
+const notNames = new Set(['the', 'guys', 'bro', 'things', 'okay', 'nice', 'skip', 'envoggle', 'wave', 'yeah', 'yep', 'nope', 'hmm', 'lets', 'thats', 'whats', 'dont', 'cant', 'wont', 'didnt', 'isnt', 'youre', 'theyre', 'ive', 'ill', 'gonna', 'wanna', 'gotta', 'kinda', 'lol']);
+function isName(word: string) {
+  if (word.length < 2 || notNames.has(word)) return false;
+  const capital = word[0].toUpperCase() + word.slice(1);
+  return nameWords.has(word) || firstNames.has(capital) || !dictionary.has(word);
+}
+
+// Turns "hi, my name is alex" into "Alex". Listens only for names: short phrases whose words,
+// after greetings and fillers, include a name. Returns undefined for anything else.
 function parseName(words: string) {
-  const rest = words.replace(/[^a-z\s-]/g, ' ').replace(/\b(hi|hey|hello|yo|so|um|uh|okay|ok|my name is|my names|name is|names|i am|im|its|this is|call me|and|i)\b/g, ' ').trim().split(/\s+/);
-  const name = rest[0] ?? '';
-  if (name.length < 2 || ['wave', 'waving', 'envoggle', 'yes', 'no', 'the', 'is', 'me'].includes(name)) return undefined;
-  return (name[0].toUpperCase() + name.slice(1)).slice(0, 12);
+  const rest = words.replace(/[^a-z\s-]/g, ' ').replace(/\b(hi|hey|hello|yo|so|um|uh|okay|ok|my name is|my names|name is|names|i am|im|its|this is|call me|and|i)\b/g, ' ').trim().split(/\s+/).filter(Boolean);
+  if (!rest.length || rest.length > 3) return undefined;
+  const name = rest.find(isName);
+  return name ? (name[0].toUpperCase() + name.slice(1)).slice(0, 12) : undefined;
 }
 
 function bridgeReady(metadata: string | undefined) {
@@ -101,8 +119,8 @@ export default defineAgent({
     let layoutChecked = 0;
     let capturedRound = -1;
     let captureTimer: ReturnType<typeof setTimeout> | undefined;
-    // Names: once both players are on camera, the referee asks Orange (player 1), then Blue, to
-    // say their name. The names screen shows each player's live camera in their colour box.
+    // Names: once both players are on camera, the referee listens for names only. The first name
+    // heard is Orange (player 1), the second Blue. The names screen shows each player's live camera in their colour box.
     const names: (string | undefined)[] = [undefined, undefined];
     let namingStarted = 0;
     let namingDone = false;
@@ -265,9 +283,10 @@ export default defineAgent({
       if (namingStarted && !namingDone) {
         if (/\b(skip|start|ready)\b/.test(words)) { namingDone = true; return; }
         const name = parseName(words);
-        // One name at a time in turn order. With separate audio per player, the speaker's slot is known.
-        const target = split() ? names.findIndex(known => !known) : slot;
-        if (!name || target < 0) return;
+        // Only names count: the first name heard is player 1 (Orange), the second is player 2 (Blue).
+        const target = names.findIndex(known => !known);
+        if (!name) { console.info('[envoggle] Not a name, ignored:', JSON.stringify(words)); return; }
+        if (target < 0) return;
         names[target] = name;
         console.info('[envoggle] Player', target + 1, 'is named', JSON.stringify(name));
         const next = names.findIndex(known => !known);
