@@ -236,7 +236,10 @@ function renderFinds(current: State) {
 
   const results = current.results;
   const margin = results ? results[current.slot].points - results[1 - current.slot].points : undefined;
-  const heading = margin === undefined ? 'Scoring' : margin === 0 ? 'Draw' : margin > 0 ? 'You win' : 'Opponent wins';
+  const totalMargin = current.totalScores[current.slot] - current.totalScores[1 - current.slot];
+  const heading = current.completed
+    ? totalMargin === 0 ? `Series tied · ${current.totalScores[current.slot]} points each` : totalMargin > 0 ? `You win the series · ${current.totalScores[current.slot]} to ${current.totalScores[1 - current.slot]}` : `Opponent wins the series · ${current.totalScores[1 - current.slot]} to ${current.totalScores[current.slot]}`
+    : margin === undefined ? 'Scoring' : margin === 0 ? 'Round tied' : margin > 0 ? 'You win this round' : 'Opponent wins this round';
   if (findStage.title.textContent !== heading) findStage.title.textContent = heading;
   findStage.cards.forEach((card, slot) => {
     const result = results?.[slot];
@@ -267,13 +270,14 @@ function render(current: State) {
   element('arena').hidden = false;
   element('feeds').hidden = current.phase === 'scoring' || current.phase === 'result';
   element('prompt').textContent = current.prompt;
+  element('scoreboard').textContent = `Round ${current.round} of ${current.totalRounds} · Total score: You ${current.totalScores[current.slot]} — Opponent ${current.totalScores[1 - current.slot]}`;
   updateClock();
   button('lock').hidden = current.phase !== 'hunt';
   button('lock').textContent = current.locked[current.slot] ? 'Replace locked frame' : 'Lock it in';
   const canReady = ['lobby', 'result', 'void'].includes(current.phase);
-  button('ready').hidden = !canReady;
+  button('ready').hidden = !canReady || current.completed;
   button('ready').disabled = !current.accepted || current.ready[current.slot] || !cameraReady(local) || !cameraReady(remote);
-  button('ready').textContent = current.ready[current.slot] ? 'Waiting for opponent' : current.phase === 'lobby' ? 'Ready' : 'Ready for rematch';
+  button('ready').textContent = current.ready[current.slot] ? 'Waiting for opponent' : current.phase === 'lobby' ? 'Ready' : 'Ready for next round';
   element('consent').hidden = !current.retentionEnabled || !canReady || current.ready[current.slot];
   element('localLabel').textContent = current.locked[current.slot] ? 'You · Locked in' : 'You';
   element('remoteLabel').textContent = current.locked[1 - current.slot] ? 'Opponent · Locked in' : 'Opponent';
@@ -282,7 +286,7 @@ function render(current: State) {
     hunt: 'Find an object and lock in your best shot.',
     confirm: current.confirmed ? 'Waiting for your opponent.' : current.guesses?.length ? 'Confirm what you found.' : 'The referee is identifying the finds.',
     scoring: 'Scoring the locked finds.',
-    result: 'Round complete.',
+    result: current.completed ? 'All three rounds complete.' : 'Round complete. Ready up for the next prompt.',
     void: 'Round ended.',
   })[current.phase];
 

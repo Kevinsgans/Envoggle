@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { blue } from './categories.js';
+import { rounds, TOTAL_ROUNDS } from './categories.js';
 import sharp from 'sharp';
 import { FOCUS_MS, SCAN_MIN_MS, type Presentation } from './find-visual.js';
 import { judgeFind, type JudgedResult, type Result } from './judge.js';
@@ -38,6 +38,7 @@ export class Duel {
   deadline = 0;
   entries = empty();
   results?: [Result, Result];
+  totalScores: [number, number] = [0, 0];
   message = '';
   round = 1;
   private timer?: ReturnType<typeof setTimeout>;
@@ -49,7 +50,8 @@ export class Duel {
     const entry = this.entries[slot];
     return {
       code: this.code, accepted: this.accepted, phase: this.phase, round: this.round,
-      deadline: this.deadline, serverTime: Date.now(), prompt: blue.prompt, ready: this.players.map(player => player.ready),
+      totalRounds: TOTAL_ROUNDS, totalScores: this.totalScores, completed: this.round >= TOTAL_ROUNDS && this.phase === 'result',
+      deadline: this.deadline, serverTime: Date.now(), prompt: rounds[this.round - 1].prompt, ready: this.players.map(player => player.ready),
       locked: this.entries.map(find => Boolean(find.frame)), message: this.message,
       guesses: entry.done ? [] : entry.guesses, options: entry.options, confirmed: entry.done,
       results: this.results, presentation: this.presentation, retentionEnabled: Boolean(process.env.TRAINING_DATA_DIR), slot,
@@ -58,6 +60,7 @@ export class Duel {
 
   ready(slot: number, retain: boolean) {
     if (!this.accepted || !['lobby', 'result', 'void'].includes(this.phase)) return;
+    if (this.phase === 'result' && this.round >= TOTAL_ROUNDS) return;
     this.players[slot].ready = true;
     this.players[slot].retain = retain;
     if (!this.players.every(player => player.ready)) return;
@@ -125,7 +128,7 @@ export class Duel {
     const isCurrent = () => entries === this.entries && this.phase === 'scoring';
     try {
       const judge = (entry: Entry): Promise<JudgedResult> => entry.frame
-        ? judgeFind(entry.frame)
+        ? judgeFind(entry.frame, rounds[this.round - 1])
         : Promise.resolve({ label: 'No find', points: 0, reason: 'No camera view was captured.', unlisted: false, safeToRetain: false });
       const [{ geometry: firstFind, ...first }, { geometry: secondFind, ...second }] = await Promise.all([judge(entries[0]), judge(entries[1])]);
       if (!isCurrent()) return;
@@ -144,6 +147,7 @@ export class Duel {
       }
       const results: [Result, Result] = [first, second];
       this.results = results;
+      results.forEach((result, slot) => { this.totalScores[slot] += result.points; });
       this.phase = 'result';
       results.forEach((result, slot) => {
         if (result.unlisted) console.info('[envoggle] Review unlisted item:', JSON.stringify(result.label));
@@ -196,7 +200,7 @@ export class Duel {
     const directory = `${process.env.TRAINING_DATA_DIR}/${randomUUID()}`;
     await mkdir(directory, { recursive: true, mode: 0o700 });
     await writeFile(`${directory}/frame.jpg`, frame, { mode: 0o600 });
-    await writeFile(`${directory}/label.json`, JSON.stringify({ label, category: blue.prompt }), { mode: 0o600 });
+    await writeFile(`${directory}/label.json`, JSON.stringify({ label, category: rounds[this.round - 1].prompt }), { mode: 0o600 });
   }
 }
 

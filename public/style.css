@@ -7,6 +7,7 @@ h1, h2, figure { margin: 0; }
 h1 { font-size: clamp(2rem, 6vw, 3.5rem); font-weight: 850; letter-spacing: -.07em; }
 h2 { margin: 1.5rem 0 1rem; }
 #clock { font-variant-numeric: tabular-nums; font-weight: 800; color: #a9efc3; font-size: 2rem; }
+#scoreboard { color: #a9efc3; font-weight: 700; font-variant-numeric: tabular-nums; }
 .feeds { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
 .feeds[hidden], label[hidden], #results:empty { display: none; }
 .feed { aspect-ratio: 4/5; max-height: 52vh; background: #202a39; border: 1px solid #405673; border-radius: .75rem; overflow: hidden; }
