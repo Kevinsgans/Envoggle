@@ -9,7 +9,13 @@
 </head>
 <body>
   <main>
-    <header><h1>Envoggle</h1><span id="clock"></span></header>
+    <header>
+      <h1>Envoggle</h1>
+      <div id="clock" role="timer" hidden>
+        <span class="clock-digits" aria-hidden="true"><span id="clock-previous"></span><span id="clock-current"></span></span>
+        <span class="clock-track" aria-hidden="true"><span id="clock-progress"></span></span>
+      </div>
+    </header>
     <p id="status" role="status" aria-live="polite">Challenge a friend to a live scavenger hunt.</p>
     <p id="error" role="alert" hidden></p>
     <section id="lobby">

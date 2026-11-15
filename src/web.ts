@@ -1,4 +1,5 @@
 import { Room, RoomEvent, Track, createLocalVideoTrack, type LocalVideoTrack } from 'livekit-client';
+import { countdownFrame, HuntClock } from './countdown.js';
 import type { Duel } from './duel.js';
 import { FOCUS_MS, PHOTO_HEIGHT, focusProgress, photoMotion, renderPhoto, scanProgress, type Photo } from './find-visual.js';
 import { COUNT_UP_MS, countUpScore, renderScore, scoreDigits } from './score-display.js';
@@ -19,6 +20,12 @@ let joining: Promise<void> | undefined;
 let clockOffset = 0;
 let scanPhotoUrl = '';
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+const huntClock = new HuntClock();
+const clock = element('clock');
+const clockPrevious = element('clock-previous');
+const clockCurrent = element('clock-current');
+const clockProgress = element('clock-progress');
+let clockAnimation: number | undefined;
 type FindCard = { article: HTMLElement; image: HTMLDivElement; score: HTMLDivElement; caption: HTMLElement; reason: HTMLParagraphElement; shownPoints?: number; photo?: Photo; drawing?: string; pending?: boolean; retryAt?: number };
 let findStage: { id: string; title: HTMLHeadingElement; cards: FindCard[] } | undefined;
 let findAnimation = 0;
@@ -271,7 +278,14 @@ function render(current: State) {
   element('feeds').hidden = current.phase === 'scoring' || current.phase === 'result';
   element('prompt').textContent = current.prompt;
   element('scoreboard').textContent = `Round ${current.stage} of ${current.totalRounds} · Total score: You ${current.totalScores[current.slot]} — Opponent ${current.totalScores[1 - current.slot]}`;
-  updateClock();
+  clock.hidden = current.phase !== 'hunt';
+  if (current.phase === 'hunt') {
+    huntClock.sync(current.deadline, current.serverTime);
+    if (clockAnimation === undefined) updateClock();
+  } else if (clockAnimation !== undefined) {
+    cancelAnimationFrame(clockAnimation);
+    clockAnimation = undefined;
+  }
   button('lock').hidden = current.phase !== 'hunt';
   button('lock').textContent = current.locked[current.slot] ? 'Replace locked frame' : 'Lock it in';
   const canReady = ['lobby', 'result', 'void'].includes(current.phase);
@@ -321,8 +335,21 @@ function render(current: State) {
 }
 
 function updateClock() {
-  element('clock').textContent = state?.phase === 'hunt'
-    ? String(Math.max(0, Math.ceil((state.deadline - Date.now() - clockOffset) / 1000))) : '';
+  const remaining = huntClock.remaining();
+  const { seconds, blend, progress, color } = countdownFrame(remaining, !reducedMotion.matches);
+  const label = `${seconds} ${seconds === 1 ? 'second' : 'seconds'} remaining`;
+  if (clock.getAttribute('aria-label') !== label) {
+    clock.setAttribute('aria-label', label);
+    clockCurrent.textContent = String(seconds);
+    clockPrevious.textContent = String(seconds + 1);
+  }
+  clock.style.color = color;
+  clockCurrent.style.opacity = String(blend);
+  clockCurrent.style.transform = `translateY(${(1 - blend) * 18}%)`;
+  clockPrevious.style.opacity = String(1 - blend);
+  clockPrevious.style.transform = `translateY(${-blend * 18}%)`;
+  clockProgress.style.transform = `scaleX(${progress})`;
+  clockAnimation = remaining > 0 ? requestAnimationFrame(updateClock) : undefined;
 }
 
 let polling = false;
@@ -391,4 +418,3 @@ if (code) {
   } else element('status').textContent = 'You’ve been challenged to a duel.';
 }
 setInterval(() => void refresh(), 350);
-setInterval(updateClock, 100);

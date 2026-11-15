@@ -7,9 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		827B5C9570B84C32B1F47950 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 827B5C9570B84C32B1F47951 /* Assets.xcassets */; };
 		43DF0EEDF2248A43896CB8ED /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 490EE6E56C904B33385E162B /* Foundation.framework */; };
 		5AD861769287A08DEF64C89C /* MessagesViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA9BDE3FEC0DBD615305EDAB /* MessagesViewController.swift */; };
+		691D7D912A24464CAE790003 /* GroupCallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 691D7D912A24464CAE790001 /* GroupCallView.swift */; };
+		827B5C9570B84C32B1F47950 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 827B5C9570B84C32B1F47951 /* Assets.xcassets */; };
 		BC3A7527464390929C08B0DD /* EnvoggleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCC6C5A608AFC2B6896AA704 /* EnvoggleApp.swift */; };
 		C05808A4D67621C786F5AC8F /* EnvoggleMessages.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = BFE7BF96FC94D751174ADA94 /* EnvoggleMessages.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D682117E63B544CF0298641D /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 490EE6E56C904B33385E162B /* Foundation.framework */; };
@@ -40,9 +41,10 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		827B5C9570B84C32B1F47951 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		490EE6E56C904B33385E162B /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		691D7D912A24464CAE790001 /* GroupCallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupCallView.swift; sourceTree = "<group>"; };
 		76559F5EF3A790C01DB535B5 /* Envoggle.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Envoggle.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		827B5C9570B84C32B1F47951 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AA9BDE3FEC0DBD615305EDAB /* MessagesViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MessagesViewController.swift; sourceTree = "<group>"; };
 		ACD1104769E02CAFC932B37A /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		BCC6C5A608AFC2B6896AA704 /* EnvoggleApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EnvoggleApp.swift; sourceTree = "<group>"; };
@@ -82,9 +84,9 @@
 			isa = PBXGroup;
 			children = (
 				AA9BDE3FEC0DBD615305EDAB /* MessagesViewController.swift */,
+				691D7D912A24464CAE790001 /* GroupCallView.swift */,
 				ACD1104769E02CAFC932B37A /* Info.plist */,
 			);
-			name = Messages;
 			path = Messages;
 			sourceTree = "<group>";
 		};
@@ -112,7 +114,6 @@
 				827B5C9570B84C32B1F47951 /* Assets.xcassets */,
 				BCC6C5A608AFC2B6896AA704 /* EnvoggleApp.swift */,
 			);
-			name = Host;
 			path = Host;
 			sourceTree = "<group>";
 		};
@@ -172,7 +173,13 @@
 				LastSwiftUpdateCheck = 1600;
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
+					20FD3C33E2E5CE280CE0CD3D = {
+						DevelopmentTeam = ADTWQDK7AX;
+						ProvisioningStyle = Automatic;
+					};
 					FF00F0318D35C230DE486FFA = {
+						DevelopmentTeam = ADTWQDK7AX;
+						ProvisioningStyle = Automatic;
 					};
 				};
 			};
@@ -185,8 +192,6 @@
 				Base,
 			);
 			mainGroup = B823665FD146E7CBE802A411;
-			minimizedProjectReferenceProxies = 0;
-			preferredProjectObjectVersion = 100;
 			productRefGroup = 4B2C1D305B37C38B7E735576 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -229,6 +234,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				5AD861769287A08DEF64C89C /* MessagesViewController.swift in Sources */,
+				691D7D912A24464CAE790003 /* GroupCallView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -312,9 +318,10 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				ENVOGGLE_SERVER_URL = "";
+				DEVELOPMENT_TEAM = ADTWQDK7AX;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Messages/Info.plist;
+				ENVOGGLE_SERVER_URL = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.envoggle.app.messages;
@@ -333,6 +340,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = ADTWQDK7AX;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
@@ -352,6 +360,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = ADTWQDK7AX;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
@@ -411,8 +420,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_COMPILATION_MODE = wholemodule;
-				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_OPTIMIZATION_LEVEL = "-Owholemodule";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
@@ -424,9 +432,10 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				ENVOGGLE_SERVER_URL = "";
+				DEVELOPMENT_TEAM = ADTWQDK7AX;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Messages/Info.plist;
+				ENVOGGLE_SERVER_URL = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.envoggle.app.messages;

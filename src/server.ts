@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { AccessToken } from 'livekit-server-sdk';
 import sharp from 'sharp';
 import { createDuel, duels } from './duel.js';
+import { GroupCallError, startGroupCall } from './group-call.js';
 
 const assets = new Map([
   ['/', ['public/index.html', 'text/html; charset=utf-8']],
@@ -37,6 +38,13 @@ const server = createServer(async (request, response) => {
     if (request.method === 'POST' && url.pathname === '/api/duels') {
       const duel = createDuel();
       return json(201, { code: duel.code, token: duel.players[0].token });
+    }
+    if (request.method === 'POST' && url.pathname === '/api/group-call') {
+      if (request.headers['content-type']?.split(';')[0].trim().toLowerCase() !== 'application/json') {
+        return json(415, { error: 'Send the game call request as JSON.' });
+      }
+      await startGroupCall(JSON.parse((await read(4096)).toString()));
+      return json(202, { requested: true });
     }
     const match = url.pathname.match(/^\/api\/duels\/([a-f0-9]{8})(?:\/([a-z]+))?$/i);
     if (!match) return json(404, { error: 'Not found' });
@@ -94,9 +102,10 @@ const server = createServer(async (request, response) => {
       else if (!duel.confirm(slot, body.action, typeof body.value === 'string' ? body.value : undefined)) return json(409, { error: 'This entry is no longer awaiting confirmation.' });
     } else return json(404, { error: 'Not found' });
     return json(200, duel.state(slot));
-  } catch {
-    if (!response.headersSent) json(400, { error: 'Could not process the request.' });
-    else response.end();
+  } catch (error) {
+    if (response.headersSent) response.end();
+    else if (error instanceof GroupCallError) json(error.status, { error: error.message, retrySame: error.retrySame });
+    else json(400, { error: 'Could not process the request.' });
   }
 });
 

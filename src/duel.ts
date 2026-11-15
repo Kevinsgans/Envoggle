@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { drawRounds, rounds, ROUNDS_PER_MATCH } from './categories.js';
 import sharp from 'sharp';
+import { HUNT_DURATION_MS } from './countdown.js';
 import { FOCUS_MS, SCAN_MIN_MS, type Presentation } from './find-visual.js';
 import { judgeFind, type JudgedResult, type Result } from './judge.js';
 import { COUNT_UP_MS } from './score-display.js';
@@ -12,7 +13,7 @@ type Phase = 'lobby' | 'hunt' | 'confirm' | 'scoring' | 'result' | 'void';
 const empty = (): [Entry, Entry] => [{ done: false }, { done: false }];
 const blank = (): Player => ({ token: randomUUID(), ready: false, retain: false });
 
-export const HUNT_DURATION_MS = 30_000;
+export { HUNT_DURATION_MS } from './countdown.js';
 let backgroundRemoval: Promise<any> | undefined;
 
 async function segmentObject(image: Buffer) {

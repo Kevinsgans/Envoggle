@@ -8,6 +8,11 @@ h1 { font-size: clamp(2rem, 6vw, 3.5rem); font-weight: 850; letter-spacing: -.07
 h2 { margin: 1.5rem 0 1rem; }
 #clock { font-variant-numeric: tabular-nums; font-weight: 800; color: #a9efc3; font-size: 2rem; }
 #scoreboard { color: #a9efc3; font-weight: 700; font-variant-numeric: tabular-nums; }
+#clock { width: 3.5rem; font-variant-numeric: tabular-nums; font-weight: 800; color: #b8f25c; font-size: 2rem; }
+.clock-digits { display: grid; place-items: center; height: 1.15em; line-height: 1; overflow: hidden; }
+.clock-digits span { grid-area: 1 / 1; }
+.clock-track { display: block; height: 3px; margin-top: .2rem; background: #344354; border-radius: 3px; overflow: hidden; }
+#clock-progress { display: block; height: 100%; background: currentColor; transform-origin: left; }
 .feeds { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
 .feeds[hidden], label[hidden], #results:empty { display: none; }
 .feed { aspect-ratio: 4/5; max-height: 52vh; background: #202a39; border: 1px solid #405673; border-radius: .75rem; overflow: hidden; }
