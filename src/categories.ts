@@ -197,22 +197,6 @@ export const oldest = {
   ],
 } as const;
 
-// Points from the loudest sound it makes in normal use: 1000 × (dB − 20) / 110. 20 dB = 0, 75 dB = 500, 130 dB = 1000.
-export const loud = {
-  prompt: 'Loudest thing',
-  goal: 'Find the thing that can make the loudest sound',
-  rule: `The real object scores by the loudest sound it makes in normal use; it does not need to be making sound now. People, animals and voices do not count. ${SCREEN}`,
-  measure: 'the loudest sound it makes in normal use, in decibels: 20 dB is 1, 50 dB is 273, 75 dB is 500, 90 dB is 636, 100 dB is 727, 115 dB is 864, 130 dB or more is 1000',
-  tiers: ['Whisper', 'Quiet', 'Moderate', 'Loud', 'Deafening'],
-  items: [
-    anchor('pencil', ['pen'], 46), anchor('keyboard', ['computer keyboard'], 273), anchor('electric toothbrush', [], 318),
-    anchor('vacuum cleaner', ['vacuum'], 499), anchor('smartphone', ['phone', 'iphone'], 544), anchor('alarm clock', ['clock'], 591),
-    anchor('smoke alarm', ['smoke detector'], 592), anchor('hair dryer', ['blow dryer'], 636), anchor('blender', [], 681),
-    anchor('acoustic guitar', ['guitar'], 683), anchor('bluetooth speaker', ['speaker'], 727), anchor('trumpet', ['trombone', 'saxophone'], 863),
-    anchor('whistle', [], 864), anchor('air horn', ['airhorn'], 991),
-  ],
-} as const;
-
 // Points from food energy on a log scale: 1000 × log10(kcal) / 4. 10 kcal = 250, 100 = 500, 1,000 = 750, 10,000 = 1000.
 export const calories = {
   prompt: 'Most calories',
@@ -244,12 +228,12 @@ export const longest = {
 } as const;
 
 // Every category; each match plays ROUNDS_PER_MATCH of them, drawn at random.
-export const rounds = [blue, electricity, price, heavy, oldest, loud, calories, longest] as const;
+export const rounds = [blue, electricity, price, heavy, oldest, calories, longest] as const;
 export const ROUNDS_PER_MATCH = 3;
 export type Category = typeof rounds[number];
 
 // A match's categories: indexes into `rounds`, drawn at random with no repeats. ENVOGGLE_ROUNDS fixes
-// them instead (1-based positions in `rounds`, in play order, e.g. "1,7,8" for a demo video).
+// them instead (1-based positions in `rounds`, in play order, e.g. "1,6,7" for a demo video).
 export function drawRounds(random = Math.random, fixed = globalThis.process?.env?.ENVOGGLE_ROUNDS) {
   if (fixed) {
     const picks = fixed.split(',').map(value => Number(value.trim()) - 1);
