@@ -40,11 +40,13 @@ test('dispatches a referee, reuses the same Chert request after uncertainty, and
   });
 
   const requests = [];
+  const keys = new Set();
   let checks = 0;
   mock.method(globalThis, 'fetch', async (url, init) => {
     if (init.method === 'POST') {
       assert.match(url, /\/calls$/);
-      assert.equal(init.headers['Idempotency-Key'], request.id);
+      assert.match(init.headers['Idempotency-Key'], /^[0-9a-f-]{36}$/);
+      keys.add(init.headers['Idempotency-Key']);
       requests.push(init.body);
       if (requests.length === 1) throw new TypeError('Test disconnect');
       return Response.json({ data: { id: 'fixture-call' } }, { status: 201 });
@@ -64,6 +66,7 @@ test('dispatches a referee, reuses the same Chert request after uncertainty, and
   assert.equal(dispatch.mock.callCount(), 1);
   assert.equal(requests.length, 2);
   assert.equal(requests[0], requests[1]);
+  assert.equal(keys.size, 1);
   const sent = JSON.parse(requests[0]);
   assert.equal(sent.line_id, 'fixture-line');
   assert.deepEqual(sent.recipients, [request.host, request.guest].map(value => ({ type: 'phone_number', value })));

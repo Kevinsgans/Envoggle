@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { AccessToken, AgentDispatchClient, RoomServiceClient, TrackType } from 'livekit-server-sdk';
 
@@ -16,6 +17,9 @@ export class GroupCallError extends Error {
 
 type Attempt = {
   id: string;
+  // Chert's Idempotency-Key: fixed for retries of this attempt, new for each attempt, because the app can
+  // reuse an invite id that Chert already saw with a different body (new LiveKit token) and refuses with 409.
+  key: string;
   room: string;
   host: string;
   guest: string;
@@ -92,7 +96,7 @@ export async function startGroupCall(input: unknown) {
   if (current && current !== attempt) throw new GroupCallError(409, 'The Chert line is already handling a game.');
   if (!attempt) {
     const rooms = new RoomServiceClient(url, livekitKey, secret, { requestTimeout: 5 });
-    attempt = { id, host, guest, room: `envoggle-call-${id}`, rooms };
+    attempt = { id, key: randomUUID(), host, guest, room: `envoggle-call-${id}`, rooms };
     attempts.set(id, attempt);
     const pending = attempt;
     setTimeout(() => {
@@ -139,7 +143,7 @@ export async function startGroupCall(input: unknown) {
 
     const uncertain = () => new GroupCallError(502, 'Chert did not confirm the call. Retry to check the same invitation.', true);
     const response = await fetch(chertCalls, {
-      method: 'POST', headers: { ...headers, 'Idempotency-Key': active.id, 'Content-Type': 'application/json' },
+      method: 'POST', headers: { ...headers, 'Idempotency-Key': active.key, 'Content-Type': 'application/json' },
       body: active.body, signal: AbortSignal.timeout(8000),
     }).catch(() => { throw uncertain(); });
     if (response.status >= 500 || response.status === 408) throw uncertain();
