@@ -4,7 +4,7 @@ import { drawRounds, rounds, ROUNDS_PER_MATCH } from './categories.js';
 import sharp from 'sharp';
 import { HUNT_DURATION_MS } from './countdown.js';
 import { FOCUS_MS, SCAN_MIN_MS, type Presentation } from './find-visual.js';
-import { judgeFind, type JudgedResult, type Result } from './judge.js';
+import { breakTie, bump, judgeFind, type JudgedResult, type Result } from './judge.js';
 import { COUNT_UP_MS } from './score-display.js';
 
 type Entry = { frame?: Buffer; object?: Promise<Buffer>; lockedAt?: number; guesses?: string[]; options?: boolean; label?: string; done: boolean };
@@ -144,6 +144,16 @@ export class Duel {
         : Promise.resolve({ label: 'No find', points: 0, reason: 'No camera view was captured.', unlisted: false, safeToRetain: false });
       const [{ geometry: firstFind, ...first }, { geometry: secondFind, ...second }] = await Promise.all([judge(entries[0]), judge(entries[1])]);
       if (!isCurrent()) return;
+      // No tied rounds, and no tied match after the last round.
+      const scores = [first, second];
+      const roundWinner = breakTie(first, second);
+      if (roundWinner !== undefined) scores[roundWinner].points = bump(scores[roundWinner].points);
+      if (this.scoredRounds + 1 >= ROUNDS_PER_MATCH && this.totalScores[0] + first.points === this.totalScores[1] + second.points) {
+        // The last round's winner takes the match; after a 0-0 last round, the best single round does.
+        const best = (slot: number) => Math.max(0, ...this.history.map(round => round.points[slot]));
+        const winner = first.points !== second.points ? (first.points > second.points ? 0 : 1) : best(0) >= best(1) ? 0 : 1;
+        scores[winner].points = bump(scores[winner].points);
+      }
       if (this.presentation) {
         const remainingScan = scanStartedAt + SCAN_MIN_MS - Date.now();
         if (remainingScan > 0) await new Promise<void>(resolve => setTimeout(resolve, remainingScan));

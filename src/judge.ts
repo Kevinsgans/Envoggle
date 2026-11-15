@@ -71,7 +71,8 @@ export async function askGemini(prompt: string, frame?: Buffer) {
 }
 
 export type Result = { label: string; points: number; reason: string; box?: [number, number, number, number]; unlisted: boolean; safeToRetain: boolean };
-export type JudgedResult = Result & { geometry?: FindGeometry };
+// `rating`: the model's own score for the find, even when a dictionary item fixes `points`; it breaks ties.
+export type JudgedResult = Result & { geometry?: FindGeometry; rating?: number };
 
 function cross(a: Point, b: Point, c: Point) {
   return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
@@ -141,6 +142,20 @@ function precise(points: number, label: string) {
   return Math.max(1, points - (hash % 4) - 1);
 }
 
+// No ties: when both players score the same, the find the model itself rated higher (then the
+// bigger-looking find, then a coin flip) gets 1 more point, or 2 when 1 would land on a multiple of 5.
+export function bump(points: number) {
+  return (points + 1) % 5 === 0 ? points + 2 : points + 1;
+}
+
+export function breakTie<T extends { points: number; rating?: number; box?: [number, number, number, number] }>(a: T, b: T, random = Math.random): 0 | 1 | undefined {
+  if (a.points !== b.points || a.points <= 0) return undefined;
+  const area = (find: T) => find.box ? (find.box[2] - find.box[0]) * (find.box[3] - find.box[1]) : 0;
+  if ((a.rating ?? 0) !== (b.rating ?? 0)) return (a.rating ?? 0) > (b.rating ?? 0) ? 0 : 1;
+  if (area(a) !== area(b)) return area(a) > area(b) ? 0 : 1;
+  return random() < 0.5 ? 0 : 1;
+}
+
 // One call per player: the model lists every real object in the frame that fits the category,
 // each is rated, and the player scores their best item.
 export async function judgeFind(frame: Buffer, category: Category = blue): Promise<JudgedResult> {
@@ -172,6 +187,7 @@ export async function judgeFind(frame: Buffer, category: Category = blue): Promi
     return [{
       label: canonical?.name ?? named,
       points,
+      rating: raw,
       reason: typeof item.reason === 'string' ? item.reason.slice(0, 180) : '',
       unlisted: !canonical,
       contour: item.contour,
