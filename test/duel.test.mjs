@@ -27,7 +27,7 @@ async function settle() {
   await new Promise(resolve => setImmediate(resolve));
 }
 
-test('scores the best matching item in each last locked frame, holding dictionary items to their band', async ({ mock }) => {
+test('scores the best matching item in each last locked frame, giving dictionary items their fixed points', async ({ mock }) => {
   const previous = process.env.GEMINI_API_KEY;
   const anthropic = process.env.ANTHROPIC_API_KEY;
   delete process.env.ANTHROPIC_API_KEY; // the mock answers Gemini-shaped requests
@@ -52,7 +52,7 @@ test('scores the best matching item in each last locked frame, holding dictionar
     await settle();
     assert.equal(duel.phase, 'result');
     assert.equal(duel.confirm(0, 'accept'), false);
-    assert.deepEqual(duel.results.map(result => [result.label, result.points, result.unlisted]), [['bandoneon', 870, true], ['pen', 200, false]]);
+    assert.deepEqual(duel.results.map(result => [result.label, result.points, result.unlisted]), [['bandoneon', 870, true], ['pen', 15, false]]);
     assert.equal(captures.length, 2);
     assert.equal(captures.includes(first.toString()), false);
     assert.deepEqual(duel.frame(0), final);
