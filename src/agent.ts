@@ -14,7 +14,9 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import sharp from 'sharp';
 import type { Duel } from './duel.js';
+import { focusProgress, scanProgress, type Photo } from './find-visual.js';
 import { findTiles, type Tile } from './layout.js';
+import { COUNT_UP_MS } from './score-display.js';
 import { DEFAULT_NAMES, TILE_HEIGHT, TILE_WIDTH, renderTile, type View } from './tile.js';
 
 type State = ReturnType<Duel['state']>;
@@ -86,8 +88,10 @@ export default defineAgent({
     let syncedAt = 0;
     let speech = Promise.resolve();
     let pendingStatus = false;
+    let lastStatusCheck = 0;
+    let countClock: { startedAt: number; elapsed: number } | undefined;
     let ticking = false;
-    let tickTimer: ReturnType<typeof setInterval> | undefined;
+    let tickTimer: ReturnType<typeof setTimeout> | undefined;
     let lastCountdown = '';
     let creating = false;
     let lastCreate = 0;
@@ -104,9 +108,7 @@ export default defineAgent({
     let namingDone = false;
     let previews: (Buffer | undefined)[] = [undefined, undefined];
     let previewedAt = 0;
-    // The frames captured for the reveal, by round.
-    let frames: (Buffer | undefined)[] = [undefined, undefined];
-    let framesRound = -1;
+    let photoRound: { id: string; photos: (Photo | undefined)[]; pending: boolean[]; retryAt: number[] } | undefined;
     const shown = () => names.map((name, slot) => name ?? DEFAULT_NAMES[slot]);
 
     async function api(slot: number, action: string, body?: object | Buffer, round?: number): Promise<State> {
@@ -122,6 +124,31 @@ export default defineAgent({
       if (response.status === 404) code = '';
       if (!response.ok) throw new Error(`Referee request failed with HTTP ${response.status}`);
       return response.json();
+    }
+
+    function refreshPhotos(state: State) {
+      if (!code || (state.phase !== 'scoring' && state.phase !== 'result')) {
+        photoRound = undefined;
+        return;
+      }
+      const id = `${code}:${state.round}`;
+      if (photoRound?.id !== id) photoRound = { id, photos: [], pending: [], retryAt: [] };
+      const current = photoRound;
+      for (const slot of slots) {
+        if (!state.locked[slot] || current.photos[slot] || current.pending[slot] || Date.now() < (current.retryAt[slot] ?? 0)) continue;
+        current.pending[slot] = true;
+        void fetch(`${address}/api/duels/${code}/frame?slot=${slot}&player=${slot}&round=${state.round}`, {
+          headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(3000),
+        }).then(async response => {
+          if (!response.ok || current !== photoRound) return;
+          const frame = Buffer.from(await response.arrayBuffer());
+          const { width, height } = await sharp(frame).metadata();
+          current.photos[slot] = { href: `data:image/jpeg;base64,${frame.toString('base64')}`, width, height };
+        }).catch(() => {}).finally(() => {
+          current.pending[slot] = false;
+          current.retryAt[slot] = Date.now() + 1000;
+        });
+      }
     }
 
     // Renders speech with macOS `say` to 16-bit mono PCM and plays it in 20 ms frames.
@@ -212,8 +239,6 @@ export default defineAgent({
         if (!fresh(slot)) return;
         try {
           const jpeg = await capture(slot);
-          if (framesRound !== round) { frames = [undefined, undefined]; framesRound = round; }
-          frames[slot] = jpeg;
           await api(slot, 'lock', jpeg, round);
         }
         catch { console.warn('[envoggle] Could not capture player', slot + 1); }
@@ -375,21 +400,54 @@ export default defineAgent({
         }
         return { kind: 'hunt', names: players, prompt: first.prompt, seconds: Math.min(seconds, huntSeconds), total: huntSeconds, locked: first.locked };
       }
-      if (first.phase === 'confirm' || first.phase === 'scoring') return { kind: 'scoring', names: players };
-      if (first.results) return { kind: 'reveal', names: players, prompt: first.prompt, results: first.results, frames: framesRound === first.round ? frames : [undefined, undefined] };
+      const photos = photoRound?.id === `${code}:${first.round}` ? photoRound.photos : [];
+      const presentation = first.presentation;
+      const finds = presentation?.finds;
+      if (first.phase === 'scoring') {
+        const now = first.serverTime + Date.now() - syncedAt;
+        const focusAt = presentation?.focusStartedAt;
+        const countUp = presentation?.countUp;
+        if (countUp) {
+          const elapsed = Math.min(COUNT_UP_MS, now - countUp.startedAt);
+          const previous = countClock?.startedAt === countUp.startedAt ? countClock.elapsed : 0;
+          countClock = { startedAt: countUp.startedAt, elapsed: Math.max(elapsed, previous) };
+        }
+        return { kind: 'scoring', names: players, prompt: first.prompt, photos, finds,
+          focus: countUp ? 1 : focusAt === undefined ? 0 : focusProgress(now - focusAt),
+          scan: focusAt === undefined && presentation ? scanProgress(now - presentation.scanStartedAt) : undefined,
+          countUp: countUp && countClock ? { elapsed: countClock.elapsed, targets: countUp.targets } : undefined };
+      }
+      if (first.phase === 'confirm') return { kind: 'message', title: 'Identifying finds', detail: 'One moment' };
+      if (first.results) return { kind: 'reveal', names: players, prompt: first.prompt, results: first.results, photos, finds };
       if (first.phase === 'void') return { kind: 'message', title: 'Round void', detail: `${first.message} Say “start” to try again.` };
       return { kind: 'ready', names: players, prompt: first.prompt };
     }
 
     async function scoreboard() {
+      const first = states[0];
+      const currentCode = code;
       const next = view();
-      const key = JSON.stringify(next, (name, value) => name === 'frames' ? (next.kind === 'names' ? previewedAt : (value as unknown[]).map(Boolean).join() + framesRound) : value);
+      const key = JSON.stringify(next, (name, value) => {
+        if (name === 'frames') return previewedAt;
+        if (name === 'photos') return [photoRound?.id, (value as unknown[]).map(Boolean)];
+        return value;
+      });
       if (key !== lastImageKey) {
         const pixels = await sharp(Buffer.from(renderTile(next))).ensureAlpha().raw().toBuffer();
         still = new VideoFrame(pixels, tileWidth, tileHeight, VideoBufferType.RGBA);
         lastImageKey = key;
       }
-      if (still && !output.signal.aborted) video.captureFrame(still);
+      if (!still || output.signal.aborted) return;
+      video.captureFrame(still);
+      if (next.kind === 'reveal' && first?.results && currentCode === code && states[0]?.round === first.round && states[0].phase === 'result') {
+        const identifier = `${code}:${first.round}:result`;
+        if (spokenCaption !== identifier) {
+          spokenCaption = identifier;
+          const [a, b] = first.results;
+          const [one, two] = next.names;
+          say(`${one}: ${a.label}, ${a.points} points. ${a.reason} ${two}: ${b.label}, ${b.points} points. ${b.reason} ${a.points === b.points ? 'A draw.' : `${a.points > b.points ? one : two} wins.`}`);
+        }
+      }
     }
 
     async function tick() {
@@ -420,13 +478,15 @@ export default defineAgent({
                 .finally(() => { creating = false; });
             }
           } else caption = 'Waiting for two player feeds';
-        } else if (!pendingStatus) {
+        } else if (!pendingStatus && Date.now() - lastStatusCheck >= 200) {
           pendingStatus = true;
+          lastStatusCheck = Date.now();
           void Promise.all(slots.map(slot => api(slot, 'state'))).then(async next => {
             if (output.signal.aborted) return;
             states = next;
             syncedAt = Date.now();
             const [first] = next;
+            refreshPhotos(first);
             if (first.phase === 'hunt' && !readyMedia()) await api(0, 'drop', {});
             let announcement = '';
             if (first.phase === 'hunt') {
@@ -438,11 +498,6 @@ export default defineAgent({
               }
             }
             caption = ['confirm', 'scoring'].includes(first.phase) ? 'Scoring both finds' : 'Say “start” to play';
-            if (first.results) {
-              const [a, b] = first.results;
-              const [one, two] = shown();
-              announcement = `${one}: ${a.label}, ${a.points} points. ${a.reason} ${two}: ${b.label}, ${b.points} points. ${b.reason} ${a.points === b.points ? 'A draw.' : `${a.points > b.points ? one : two} wins.`}`;
-            }
             if (first.phase === 'void') announcement = first.message;
             const identifier = `${first.round}:${first.phase}:${announcement}`;
             if (announcement && identifier !== spokenCaption) {
@@ -455,7 +510,15 @@ export default defineAgent({
       } finally { ticking = false; }
     }
 
-    tickTimer = setInterval(() => void tick().catch(() => console.error('[envoggle] Scoreboard update failed')), 200);
+    function scheduleTick() {
+      if (output.signal.aborted) return;
+      const current = states[0];
+      const counting = current?.phase === 'scoring' && current.presentation?.countUp !== undefined;
+      tickTimer = setTimeout(() => {
+        void tick().catch(() => console.error('[envoggle] Scoreboard update failed')).finally(scheduleTick);
+      }, counting ? 100 : 200);
+    }
+    scheduleTick();
     // Debug only: with ENVOGGLE_DEBUG_FRAMES set to a folder, save each player's current frame every 2 s.
     const debugFrames = process.env.ENVOGGLE_DEBUG_FRAMES;
     const debugTimer = debugFrames ? setInterval(() => {
@@ -472,7 +535,7 @@ export default defineAgent({
     }, 2000) : undefined;
     context.addShutdownCallback(async () => clearInterval(debugTimer));
     context.addShutdownCallback(async () => {
-      clearInterval(tickTimer);
+      clearTimeout(tickTimer);
       clearTimeout(captureTimer);
       output.abort();
       stopReaders.forEach(stop => stop());

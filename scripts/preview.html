@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Envoggle · Referee preview</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; background: #10141b; color: #f2f5f8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { max-width: 990px; margin: auto; padding: clamp(1rem, 4vw, 3rem); }
+    h1 { margin: 0 0 1.5rem; font-size: clamp(1.7rem, 5vw, 2.8rem); letter-spacing: -.05em; }
+    .layout { display: grid; grid-template-columns: minmax(250px, 1fr) minmax(280px, 1.5fr); gap: 1.5rem; align-items: start; }
+    .controls { padding: 1.25rem; border: 1px solid #344354; border-radius: .8rem; background: #16202c; }
+    .field { display: block; margin-bottom: 1.2rem; font-weight: 650; }
+    select, input[type=range] { display: block; width: 100%; margin-top: .45rem; }
+    select, button { padding: .55rem .7rem; border: 1px solid #526275; border-radius: .45rem; background: #263345; color: inherit; font: inherit; }
+    button { cursor: pointer; }
+    button.primary { background: #b8f25c; color: #172710; border-color: transparent; font-weight: 700; }
+    input { accent-color: #b8f25c; }
+    .actions { display: flex; flex-wrap: wrap; gap: .55rem; }
+    .crop-option { display: flex; align-items: center; gap: .45rem; border-top: 1px solid #344354; margin-top: 1.2rem; padding-top: 1.2rem; }
+    .photo-test { border-top: 1px solid #344354; margin-top: 1.4rem; padding-top: 1.2rem; }
+    .photo-test h2 { font-size: 1.15rem; margin: 0 0 .6rem; }
+    .photo-test .field { margin-top: .9rem; margin-bottom: .9rem; }
+    input[type=file] { display: block; width: 100%; margin-top: .35rem; font: inherit; font-size: .85rem; }
+    .photo-test video { display: block; width: 100%; margin: .6rem 0; border-radius: .4rem; }
+    [hidden] { display: none !important; }
+    .note { color: #b3bdc9; font-size: .88rem; line-height: 1.5; margin: .8rem 0 0; }
+    figure { margin: 0; }
+    .stage { display: grid; justify-items: center; padding: 1rem; border: 1px solid #344354; border-radius: .8rem; background: #0b1017; }
+    .viewport { position: relative; width: min(100%, 350px); aspect-ratio: 720 / 1280; overflow: hidden; background: #0d131c; }
+    .viewport img { position: absolute; width: 100%; display: block; }
+    .viewport.cropped { width: min(100%, 350px); aspect-ratio: 560 / 720; }
+    .viewport.cropped img { width: calc(720 / 560 * 100%); left: calc(-80 / 560 * 100%); top: calc(-280 / 720 * 100%); }
+    figcaption { margin-top: .6rem; color: #b3bdc9; text-align: center; font-size: .9rem; }
+    @media (max-width: 630px) { .layout { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Referee tile preview</h1>
+    <div class="layout">
+      <section class="controls" aria-label="Preview controls">
+        <label class="field" for="screen">Screen
+          <select id="screen">
+            <option value="waiting">Waiting for players</option>
+            <option value="one-player">Waiting for one more player</option>
+            <option value="name-orange">Name entry · Orange</option>
+            <option value="name-blue">Name entry · Blue</option>
+            <option value="setup">Setting up the round</option>
+            <option value="ready" selected>Ready to play</option>
+            <option value="hunt">Hunt countdown</option>
+            <option value="scoring">Scoring</option>
+            <option value="photo-scoring" hidden>Scoring · your photos</option>
+            <option value="photo-result" hidden>Results · your photos</option>
+            <option value="blue-wins">Results · Blue wins</option>
+            <option value="orange-wins">Results · Orange wins</option>
+            <option value="draw">Results · Draw</option>
+            <option value="void">Round void</option>
+          </select>
+        </label>
+        <label class="field" for="seconds">Time remaining <output id="time" for="seconds"></output>
+          <input id="seconds" type="range" min="0" step="1">
+        </label>
+        <div class="actions">
+          <button id="play-scan" class="primary" type="button">Play scan and reveal</button>
+          <button id="play" type="button">Play countdown</button>
+          <button id="final" type="button">Jump to 5s</button>
+        </div>
+        <p class="note">The preview shows the green scan, object outlines, score count-up, and sample result.</p>
+        <label class="crop-option"><input id="crop" type="checkbox"> Show only the FaceTime safe area</label>
+        <form id="photo-test" class="photo-test">
+          <h2>Test with your photos</h2>
+          <p class="note">Use the camera or choose one photo per player. Render sends both photos to your configured judge.</p>
+          <label class="field">Orange player <input name="orange" type="file" accept="image/*" capture="environment"></label>
+          <label class="field">Blue player <input name="blue" type="file" accept="image/*" capture="environment"></label>
+          <div id="camera" hidden>
+            <video id="camera-video" autoplay playsinline muted></video>
+            <div class="actions">
+              <button type="button" data-photo="orange">Take Orange photo</button>
+              <button type="button" data-photo="blue">Take Blue photo</button>
+            </div>
+          </div>
+          <div class="actions">
+            <button id="judge-photos" class="primary" type="submit">Render my photos</button>
+            <button id="toggle-camera" type="button">Use camera</button>
+            <button id="replay-photos" type="button" hidden>Replay my photos</button>
+          </div>
+          <p class="note" id="photo-status" role="status" hidden></p>
+        </form>
+      </section>
+      <figure>
+        <div class="stage">
+          <div class="viewport" id="viewport"><img id="tile" alt="Referee tile"></div>
+        </div>
+        <figcaption id="caption">Full tile · 720 × 1280</figcaption>
+        <p class="note" id="error" role="alert" hidden>Couldn’t render this tile. Check the preview server in Terminal.</p>
+      </figure>
+    </div>
+  </main>
+  <script>
+    const total = __HUNT_SECONDS__;
+    const scoringDuration = __SCORING_MS__;
+    const previewFrameMs = 50;
+    const screen = document.getElementById('screen');
+    const seconds = document.getElementById('seconds');
+    const time = document.getElementById('time');
+    const play = document.getElementById('play');
+    const tile = document.getElementById('tile');
+    const error = document.getElementById('error');
+    const crop = document.getElementById('crop');
+    const photoTest = document.getElementById('photo-test');
+    const photoStatus = document.getElementById('photo-status');
+    const judgePhotos = document.getElementById('judge-photos');
+    const replayPhotos = document.getElementById('replay-photos');
+    const camera = document.getElementById('camera');
+    const cameraVideo = document.getElementById('camera-video');
+    const toggleCamera = document.getElementById('toggle-camera');
+    seconds.max = seconds.value = String(total);
+    let timer;
+    let scoringStart;
+    let photoPreview;
+
+    function render() {
+      time.value = `${seconds.value} s`;
+      tile.alt = screen.selectedOptions[0].textContent;
+      const query = new URLSearchParams({ screen: screen.value, seconds: seconds.value });
+      if (screen.value.startsWith('photo-')) query.set('preview', photoPreview);
+      if (screen.value === 'scoring' || screen.value === 'photo-scoring') {
+        query.set('screen', 'scoring');
+        if (scoringStart !== undefined) query.set('elapsed', String(Math.round(performance.now() - scoringStart)));
+        tile.src = `/tile.svg?${query}`;
+      } else tile.src = `/tile.png?${query}`;
+    }
+
+    function pause() {
+      clearTimeout(timer);
+      timer = undefined;
+      scoringStart = undefined;
+      play.textContent = 'Play countdown';
+    }
+
+    function tick() {
+      if (scoringStart !== undefined) {
+        if (performance.now() - scoringStart >= scoringDuration) {
+          screen.value = screen.value === 'photo-scoring' ? 'photo-result' : 'blue-wins';
+          pause();
+        } else timer = setTimeout(tick, previewFrameMs);
+      } else if (Number(seconds.value) > 0) {
+        seconds.value = String(Number(seconds.value) - 1);
+        timer = setTimeout(tick, 1000);
+      } else {
+        startScoring();
+        return;
+      }
+      render();
+    }
+
+    function startScoring(usePhotos = false) {
+      pause();
+      screen.value = usePhotos ? 'photo-scoring' : 'scoring';
+      seconds.value = '0';
+      scoringStart = performance.now();
+      play.textContent = 'Pause playback';
+      tick();
+    }
+
+    screen.onchange = () => { pause(); render(); };
+    seconds.oninput = () => { pause(); screen.value = 'hunt'; render(); };
+    document.getElementById('final').onclick = () => {
+      pause();
+      screen.value = 'hunt';
+      seconds.value = String(Math.min(5, total));
+      render();
+    };
+    document.getElementById('play-scan').onclick = () => startScoring();
+    replayPhotos.onclick = () => startScoring(true);
+    play.onclick = () => {
+      if (timer !== undefined) return pause();
+      if (screen.value !== 'hunt' || Number(seconds.value) === 0) seconds.value = String(total);
+      screen.value = 'hunt';
+      play.textContent = 'Pause playback';
+      timer = setTimeout(tick, 1000);
+      render();
+    };
+    crop.onchange = () => {
+      document.getElementById('viewport').classList.toggle('cropped', crop.checked);
+      document.getElementById('caption').textContent = crop.checked ? 'Safe area · 560 × 720' : 'Full tile · 720 × 1280';
+    };
+
+    function showPhotoStatus(message) {
+      photoStatus.hidden = !message;
+      photoStatus.textContent = message;
+    }
+
+    function closeCamera() {
+      cameraVideo.srcObject?.getTracks().forEach(track => track.stop());
+      cameraVideo.srcObject = null;
+      camera.hidden = true;
+      toggleCamera.textContent = 'Use camera';
+    }
+
+    toggleCamera.onclick = async () => {
+      if (cameraVideo.srcObject) return closeCamera();
+      toggleCamera.disabled = true;
+      try {
+        cameraVideo.srcObject = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        camera.hidden = false;
+        toggleCamera.textContent = 'Turn camera off';
+        showPhotoStatus('');
+      } catch {
+        showPhotoStatus('Could not open the camera. Allow camera access or choose files instead.');
+      } finally {
+        toggleCamera.disabled = false;
+      }
+    };
+
+    camera.querySelectorAll('[data-photo]').forEach(button => {
+      button.onclick = () => {
+        if (!cameraVideo.videoWidth) return showPhotoStatus('The camera is still starting. Try again in a moment.');
+        const canvas = document.createElement('canvas');
+        const scale = Math.min(1, 720 / Math.max(cameraVideo.videoWidth, cameraVideo.videoHeight));
+        canvas.width = Math.round(cameraVideo.videoWidth * scale);
+        canvas.height = Math.round(cameraVideo.videoHeight * scale);
+        canvas.getContext('2d').drawImage(cameraVideo, 0, 0, canvas.width, canvas.height);
+        const player = button.dataset.photo;
+        canvas.toBlob(blob => {
+          if (!blob) return showPhotoStatus('Could not capture a photo. Try again.');
+          const selection = new DataTransfer();
+          selection.items.add(new File([blob], `${player}-camera.jpg`, { type: 'image/jpeg' }));
+          photoTest.elements.namedItem(player).files = selection.files;
+          showPhotoStatus('Photo captured.');
+        }, 'image/jpeg', .92);
+      };
+    });
+
+    photoTest.onsubmit = async event => {
+      event.preventDefault();
+      const photos = new FormData(photoTest);
+      if (!photos.get('orange').size || !photos.get('blue').size) {
+        return showPhotoStatus('Take or choose a photo for each player first.');
+      }
+      judgePhotos.disabled = true;
+      closeCamera();
+      showPhotoStatus('Judging both photos…');
+      try {
+        const response = await fetch('/photo-preview', { method: 'POST', body: photos });
+        const result = await response.json();
+        if (!response.ok) return showPhotoStatus(result.error);
+        photoPreview = result.id;
+        screen.querySelectorAll('option[value^="photo-"]').forEach(option => { option.hidden = false; });
+        replayPhotos.hidden = false;
+        showPhotoStatus('Your photo preview is ready.');
+        startScoring(true);
+      } catch {
+        showPhotoStatus('Could not reach the preview server. Try again.');
+      } finally {
+        judgePhotos.disabled = false;
+      }
+    };
+
+    tile.onload = () => { error.hidden = true; };
+    tile.onerror = () => {
+      error.hidden = false;
+      if (screen.value.startsWith('photo-')) showPhotoStatus('This photo preview may have expired. Render your photos again.');
+    };
+    render();
+  </script>
+</body>
+</html>

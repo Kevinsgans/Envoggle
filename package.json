@@ -5,6 +5,7 @@
     "test": "npm run build && node --test test/*.test.mjs",
     "build": "tsc && esbuild src/web.ts --bundle --platform=browser --outfile=dist/web.js",
     "start": "node --env-file-if-exists=.env dist/server.js",
+    "preview": "npm run build && node --env-file-if-exists=.env --watch scripts/preview.mjs",
     "agent": "node --env-file-if-exists=.env dist/agent.js start",
     "draft-dictionary": "node --env-file-if-exists=.env dist/draft-dictionary.js"
   },

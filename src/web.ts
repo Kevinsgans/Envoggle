@@ -1,5 +1,7 @@
 import { Room, RoomEvent, Track, createLocalVideoTrack, type LocalVideoTrack } from 'livekit-client';
 import type { Duel } from './duel.js';
+import { FOCUS_MS, PHOTO_HEIGHT, focusProgress, photoMotion, renderPhoto, scanProgress, type Photo } from './find-visual.js';
+import { COUNT_UP_MS, countUpScore, renderScore, scoreDigits } from './score-display.js';
 
 type State = ReturnType<Duel['state']>;
 const element = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -13,10 +15,13 @@ let camera: LocalVideoTrack | undefined;
 let local: HTMLVideoElement | undefined;
 let remote: HTMLVideoElement | undefined;
 let renderedChoices = '';
-let renderedResults = '';
 let joining: Promise<void> | undefined;
 let clockOffset = 0;
 let scanPhotoUrl = '';
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+type FindCard = { article: HTMLElement; image: HTMLDivElement; score: HTMLDivElement; caption: HTMLElement; reason: HTMLParagraphElement; shownPoints?: number; photo?: Photo; drawing?: string; pending?: boolean; retryAt?: number };
+let findStage: { id: string; title: HTMLHeadingElement; cards: FindCard[] } | undefined;
+let findAnimation = 0;
 
 async function request(path: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
@@ -108,13 +113,159 @@ function actionButton(text: string, onClick: () => void) {
   return control;
 }
 
+function clearFinds() {
+  if (!findStage) return;
+  cancelAnimationFrame(findAnimation);
+  findAnimation = 0;
+  findStage.cards.forEach(({ photo }) => { if (photo) URL.revokeObjectURL(photo.href); });
+  findStage = undefined;
+  element('results').replaceChildren();
+}
+
+function animateFinds() {
+  findAnimation = 0;
+  if (!state || !findStage) return;
+  const { presentation } = state;
+  const now = Date.now() + clockOffset;
+  const focusAt = presentation?.focusStartedAt;
+  const scoring = state.phase === 'scoring';
+  const countUp = scoring ? presentation?.countUp : undefined;
+  const elapsedCount = countUp ? now - countUp.startedAt : undefined;
+  const scan = scoring && focusAt === undefined && !reducedMotion.matches ? presentation : undefined;
+  const focus = !scoring || countUp || (focusAt !== undefined && reducedMotion.matches)
+    ? 1 : focusAt === undefined ? 0 : focusProgress(now - focusAt);
+
+  findStage.cards.forEach((card, slot) => {
+    const target = countUp?.targets[slot];
+    if (elapsedCount !== undefined && target != null) {
+      const points = reducedMotion.matches ? undefined : Math.max(card.shownPoints ?? 0, countUpScore(elapsedCount, target));
+      const motion = points === undefined ? 'static' : 'counting';
+      if (card.score.dataset.motion !== motion) {
+        card.score.innerHTML = renderScore(points);
+        card.score.dataset.motion = motion;
+        card.score.hidden = false;
+      } else if (points !== undefined && points !== card.shownPoints) {
+        const digits = scoreDigits(points);
+        card.score.querySelectorAll('text').forEach((digit, column) => { digit.textContent = digits[column]; });
+      }
+      if (points !== undefined) card.shownPoints = points;
+    }
+    if (!card.photo) return;
+    const geometry = presentation?.finds?.[slot] ?? undefined;
+    const mode = scan ? 'scan' : geometry ? 'focus' : 'photo';
+    if (card.drawing !== mode) {
+      card.image.innerHTML = renderPhoto(`find-${slot}`, card.photo, geometry, focus, scan ? scanProgress(now - scan.scanStartedAt) : undefined);
+      card.drawing = mode;
+    }
+    if (scan) {
+      card.image.querySelector('[data-beam]')?.setAttribute('transform', `translate(0 ${scanProgress(now - scan.scanStartedAt) * PHOTO_HEIGHT})`);
+    } else if (geometry) {
+      const motion = photoMotion(card.photo, geometry, focus);
+      card.image.querySelector('[data-photo]')?.setAttribute('transform', motion.transform);
+      card.image.querySelector('[data-background]')?.setAttribute('opacity', String(motion.background));
+      const outline = card.image.querySelector('[data-outline]');
+      outline?.setAttribute('opacity', String(focus));
+      outline?.setAttribute('stroke-width', String(motion.stroke));
+    }
+  });
+  if (scan || (scoring && !reducedMotion.matches &&
+    (elapsedCount !== undefined ? elapsedCount < COUNT_UP_MS : focusAt !== undefined && now < focusAt + FOCUS_MS))) {
+    findAnimation = requestAnimationFrame(animateFinds);
+  }
+}
+
+function scheduleFindAnimation() {
+  if (!findAnimation) findAnimation = requestAnimationFrame(animateFinds);
+}
+
+async function loadFindPhoto(card: FindCard, slot: number, round: number) {
+  const stage = findStage;
+  card.pending = true;
+  let href: string | undefined;
+  try {
+    const response = await fetch(`/api/duels/${code}/frame?player=${slot}&round=${round}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!response.ok || stage !== findStage) return;
+    href = URL.createObjectURL(await response.blob());
+    const image = new Image();
+    image.src = href;
+    await image.decode();
+    if (stage !== findStage) return;
+    card.photo = { href, width: image.naturalWidth, height: image.naturalHeight };
+    href = undefined;
+    scheduleFindAnimation();
+  } catch {
+    // The next state poll can retry a frame that failed to load.
+  } finally {
+    if (href) URL.revokeObjectURL(href);
+    card.pending = false;
+    card.retryAt = Date.now() + 1000;
+  }
+}
+
+function renderFinds(current: State) {
+  if (current.phase !== 'scoring' && current.phase !== 'result') return clearFinds();
+  const id = `${code}:${current.round}`;
+  if (findStage?.id !== id) {
+    clearFinds();
+    const title = document.createElement('h2');
+    const grid = document.createElement('div');
+    grid.className = 'result-grid';
+    const cards = current.locked.map((locked, slot): FindCard => {
+      const article = document.createElement('article');
+      article.className = `result ${slot === 0 ? 'orange-result' : 'blue-result'}`;
+      const name = document.createElement('h3');
+      name.textContent = slot === current.slot ? 'You' : 'Opponent';
+      const image = document.createElement('div');
+      image.className = 'result-photo';
+      image.setAttribute('role', 'img');
+      image.setAttribute('aria-label', locked ? 'Locked photo' : 'No frame');
+      image.textContent = locked ? 'Loading frame…' : 'No frame';
+      const score = document.createElement('div');
+      score.className = 'result-score';
+      score.hidden = true;
+      score.setAttribute('aria-hidden', 'true');
+      const caption = document.createElement('strong');
+      const reason = document.createElement('p');
+      article.append(image, name, score, caption, reason);
+      return { article, image, score, caption, reason };
+    });
+    grid.append(cards[current.slot].article, cards[1 - current.slot].article);
+    element('results').append(title, grid);
+    findStage = { id, title, cards };
+  }
+
+  const results = current.results;
+  const margin = results ? results[current.slot].points - results[1 - current.slot].points : undefined;
+  const heading = margin === undefined ? 'Scoring' : margin === 0 ? 'Draw' : margin > 0 ? 'You win' : 'Opponent wins';
+  if (findStage.title.textContent !== heading) findStage.title.textContent = heading;
+  findStage.cards.forEach((card, slot) => {
+    const result = results?.[slot];
+    if (result && !card.caption.textContent) {
+      card.score.innerHTML = renderScore(result.points);
+      delete card.score.dataset.motion;
+      card.score.hidden = false;
+      card.score.removeAttribute('aria-hidden');
+      card.score.setAttribute('role', 'img');
+      card.score.setAttribute('aria-label', `${result.points} ${result.points === 1 ? 'point' : 'points'}`);
+      card.caption.textContent = result.label;
+      card.reason.textContent = result.reason;
+      if (current.locked[slot]) card.image.setAttribute('aria-label', result.label);
+    }
+    if (current.locked[slot] && !card.photo && !card.pending && Date.now() >= (card.retryAt ?? 0)) {
+      void loadFindPhoto(card, slot, current.round);
+    }
+  });
+  scheduleFindAnimation();
+}
+
 function render(current: State) {
   if (state && current.serverTime < state.serverTime) return;
   state = current;
-  // Only while this player's locked photo is waiting to be scored; never in the lobby or before a lock.
-  element('scan-stage').hidden = !current.locked[current.slot] || !['hunt', 'confirm', 'scoring'].includes(current.phase);
+  // Lucas's panel covers the wait between locking and the buzzer; the results stage animates scoring.
+  element('scan-stage').hidden = !current.locked[current.slot] || !['hunt', 'confirm'].includes(current.phase);
   clockOffset = current.serverTime - Date.now();
   element('arena').hidden = false;
+  element('feeds').hidden = current.phase === 'scoring' || current.phase === 'result';
   element('prompt').textContent = current.prompt;
   updateClock();
   button('lock').hidden = current.phase !== 'hunt';
@@ -162,47 +313,7 @@ function render(current: State) {
     }
   }
 
-  const results = JSON.stringify([current.round, current.results]);
-  if (results !== renderedResults) {
-    renderedResults = results;
-    const region = element('results');
-    region.replaceChildren();
-    if (current.results) {
-      const outcome = current.results[current.slot].points - current.results[1 - current.slot].points;
-      const title = document.createElement('h2');
-      title.textContent = outcome === 0 ? 'Draw' : outcome > 0 ? 'You win' : 'Opponent wins';
-      const grid = document.createElement('div');
-      grid.className = 'result-grid';
-      for (const slot of [current.slot, 1 - current.slot]) {
-        const score = current.results[slot];
-        const card = document.createElement('article');
-        card.className = 'result';
-        const visual = document.createElement('div');
-        visual.className = 'result-visual';
-        const scan = document.createElement('span');
-        scan.className = 'result-scan';
-        scan.setAttribute('aria-hidden', 'true');
-        visual.append(scan);
-        const caption = document.createElement('strong');
-        caption.textContent = `${score.label} · ${score.points} pts`;
-        const reason = document.createElement('p');
-        reason.textContent = score.reason;
-        void fetch(`/api/duels/${code}/object?player=${slot}`, { headers: { Authorization: `Bearer ${token}` } })
-          .then(response => response.ok ? response.blob() : undefined).then(blob => {
-            if (!blob) return;
-            const image = document.createElement('img');
-            image.alt = `${score.label}, isolated object cutout when segmentation succeeds`;
-            const url = URL.createObjectURL(blob);
-            image.onload = image.onerror = () => URL.revokeObjectURL(url);
-            image.src = url;
-            visual.prepend(image);
-          }).catch(() => {});
-        card.append(visual, caption, reason);
-        grid.append(card);
-      }
-      region.append(title, grid);
-    }
-  }
+  renderFinds(current);
 }
 
 function updateClock() {

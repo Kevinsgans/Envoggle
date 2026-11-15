@@ -20,7 +20,7 @@
     </section>
     <section id="arena" hidden>
       <h2 id="prompt">Things that are blue</h2>
-      <div class="feeds">
+      <div id="feeds" class="feeds">
         <figure><div class="feed" id="local"></div><figcaption id="localLabel">You</figcaption></figure>
         <figure><div class="feed" id="remote"></div><figcaption id="remoteLabel">Opponent</figcaption></figure>
       </div>
@@ -28,13 +28,13 @@
         <div class="scan-visual"><img id="scan-photo" alt="Your locked photo"><span class="scan-band" aria-hidden="true"></span></div>
         <p id="scan-label">Scanning your find…</p>
       </section>
+      <section id="results" aria-live="polite"></section>
       <div id="controls">
         <label id="consent"><input id="retain" type="checkbox"> Save my confirmed image and label for vision-model training. Envoggle may license or sell them to third parties.</label>
         <button id="ready">Ready</button>
         <button id="lock" hidden>Lock it in</button>
       </div>
       <section id="choices" aria-label="Confirm your item"></section>
-      <section id="results" aria-live="polite"></section>
     </section>
   </main>
 </body>

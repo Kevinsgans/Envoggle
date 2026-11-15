@@ -1,8 +1,10 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { blue } from './categories.js';
-import { judgeFind, type Result } from './judge.js';
 import sharp from 'sharp';
+import { FOCUS_MS, SCAN_MIN_MS, type Presentation } from './find-visual.js';
+import { judgeFind, type JudgedResult, type Result } from './judge.js';
+import { COUNT_UP_MS } from './score-display.js';
 
 type Entry = { frame?: Buffer; object?: Promise<Buffer>; lockedAt?: number; guesses?: string[]; options?: boolean; label?: string; done: boolean };
 type Player = { token: string; ready: boolean; retain: boolean };
@@ -39,6 +41,7 @@ export class Duel {
   message = '';
   round = 1;
   private timer?: ReturnType<typeof setTimeout>;
+  private presentation?: Presentation;
 
   constructor(readonly code: string) {}
 
@@ -49,7 +52,7 @@ export class Duel {
       deadline: this.deadline, serverTime: Date.now(), prompt: blue.prompt, ready: this.players.map(player => player.ready),
       locked: this.entries.map(find => Boolean(find.frame)), message: this.message,
       guesses: entry.done ? [] : entry.guesses, options: entry.options, confirmed: entry.done,
-      results: this.results, retentionEnabled: Boolean(process.env.TRAINING_DATA_DIR), slot,
+      results: this.results, presentation: this.presentation, retentionEnabled: Boolean(process.env.TRAINING_DATA_DIR), slot,
     };
   }
 
@@ -61,6 +64,7 @@ export class Duel {
     if (this.phase !== 'lobby') this.round++;
     this.entries = empty();
     this.results = undefined;
+    this.presentation = undefined;
     this.message = '';
     this.phase = 'hunt';
     this.deadline = Date.now() + HUNT_DURATION_MS;
@@ -85,6 +89,7 @@ export class Duel {
     this.phase = 'void';
     this.message = message;
     this.entries = empty();
+    this.presentation = undefined;
   }
 
   private async finish() {
@@ -115,12 +120,29 @@ export class Duel {
     clearTimeout(this.timer);
     this.phase = 'scoring';
     const entries = this.entries;
+    const scanStartedAt = Date.now();
+    if (entries.some(entry => entry.frame)) this.presentation = { scanStartedAt };
+    const isCurrent = () => entries === this.entries && this.phase === 'scoring';
     try {
-      const judge = (entry: Entry): Promise<Result> => entry.frame
+      const judge = (entry: Entry): Promise<JudgedResult> => entry.frame
         ? judgeFind(entry.frame)
         : Promise.resolve({ label: 'No find', points: 0, reason: 'No camera view was captured.', unlisted: false, safeToRetain: false });
-      const results = await Promise.all([judge(entries[0]), judge(entries[1])]);
-      if (entries !== this.entries || this.phase !== 'scoring') return;
+      const [{ geometry: firstFind, ...first }, { geometry: secondFind, ...second }] = await Promise.all([judge(entries[0]), judge(entries[1])]);
+      if (!isCurrent()) return;
+      if (this.presentation) {
+        const remainingScan = scanStartedAt + SCAN_MIN_MS - Date.now();
+        if (remainingScan > 0) await new Promise<void>(resolve => setTimeout(resolve, remainingScan));
+        if (!isCurrent()) return;
+        this.presentation = { scanStartedAt, focusStartedAt: Date.now(), finds: [firstFind, secondFind] };
+        await new Promise<void>(resolve => setTimeout(resolve, FOCUS_MS));
+        if (!isCurrent()) return;
+        this.presentation = { ...this.presentation, countUp: {
+          startedAt: Date.now(), targets: [entries[0].frame ? first.points : null, entries[1].frame ? second.points : null],
+        } };
+        await new Promise<void>(resolve => setTimeout(resolve, COUNT_UP_MS));
+        if (!isCurrent()) return;
+      }
+      const results: [Result, Result] = [first, second];
       this.results = results;
       this.phase = 'result';
       results.forEach((result, slot) => {
@@ -132,12 +154,13 @@ export class Duel {
       });
     } catch (error) {
       console.error('[envoggle] Scoring failed', error instanceof Error ? error.message : '');
-      if (entries === this.entries) this.void('Scoring timed out or failed. Try a rematch.');
+      if (isCurrent()) this.void('Scoring timed out or failed. Try a rematch.');
     }
   }
 
-  frame(slot: number) {
-    return this.phase === 'result' ? this.entries[slot]?.frame : undefined;
+  frame(slot: number, round = this.round) {
+    if (round !== this.round || (this.phase !== 'scoring' && this.phase !== 'result')) return;
+    return this.entries[slot]?.frame;
   }
 
   async objectFrame(slot: number) {
