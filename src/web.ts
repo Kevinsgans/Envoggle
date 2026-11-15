@@ -119,9 +119,12 @@ function render(current: State) {
   button('lock').hidden = current.phase !== 'hunt';
   button('lock').textContent = current.locked[current.slot] ? 'Replace locked frame' : 'Lock it in';
   const canReady = ['lobby', 'result', 'void'].includes(current.phase);
-  button('ready').hidden = !canReady;
+  button('ready').hidden = !canReady || current.completed;
   button('ready').disabled = !current.accepted || current.ready[current.slot] || !cameraReady(local) || !cameraReady(remote);
-  button('ready').textContent = current.ready[current.slot] ? 'Waiting for opponent' : current.phase === 'lobby' ? 'Ready' : 'Ready for rematch';
+  button('ready').textContent = current.ready[current.slot] ? 'Waiting for opponent' : current.phase === 'lobby' ? 'Ready' : 'Ready for next round';
+  const yours = current.totalScores[current.slot];
+  const theirs = current.totalScores[1 - current.slot];
+  element('scoreboard').textContent = `Round ${current.round} of ${current.totalRounds} · Total score: You ${yours} — Opponent ${theirs}`;
   element('consent').hidden = !current.retentionEnabled || !canReady || current.ready[current.slot];
   element('localLabel').textContent = current.locked[current.slot] ? 'You · Locked in' : 'You';
   element('remoteLabel').textContent = current.locked[1 - current.slot] ? 'Opponent · Locked in' : 'Opponent';
@@ -130,7 +133,7 @@ function render(current: State) {
     hunt: 'Find an object and lock in your best shot.',
     confirm: current.confirmed ? 'Waiting for your opponent.' : current.guesses?.length ? 'Confirm what you found.' : 'The referee is identifying the finds.',
     scoring: 'Scoring the locked finds.',
-    result: 'Round complete.',
+    result: current.completed ? 'All three rounds complete.' : 'Round complete. Ready up for the next prompt.',
     void: 'Round ended.',
   })[current.phase];
 
@@ -161,15 +164,17 @@ function render(current: State) {
     }
   }
 
-  const results = JSON.stringify([current.round, current.results]);
+  const results = JSON.stringify([current.round, current.results, current.totalScores, current.completed]);
   if (results !== renderedResults) {
     renderedResults = results;
     const region = element('results');
     region.replaceChildren();
     if (current.results) {
-      const outcome = current.results[current.slot].points - current.results[1 - current.slot].points;
+      const outcome = current.completed ? yours - theirs : current.results[current.slot].points - current.results[1 - current.slot].points;
       const title = document.createElement('h2');
-      title.textContent = outcome === 0 ? 'Draw' : outcome > 0 ? 'You win' : 'Opponent wins';
+      title.textContent = current.completed
+        ? outcome === 0 ? `Series tied · ${yours} points each` : outcome > 0 ? `You win the series · ${yours} to ${theirs}` : `Opponent wins the series · ${theirs} to ${yours}`
+        : outcome === 0 ? 'Round tied' : outcome > 0 ? 'You win this round' : 'Opponent wins this round';
       const grid = document.createElement('div');
       grid.className = 'result-grid';
       for (const slot of [current.slot, 1 - current.slot]) {

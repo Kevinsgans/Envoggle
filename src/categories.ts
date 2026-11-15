@@ -80,7 +80,89 @@ export const blue = {
   ],
 } as const;
 
-export function findItem(label: string) {
-  const words = label.toLowerCase().trim().replace(/^blue\s+/, '').replace(/\s+/g, ' ');
-  return blue.items.find(item => item.name === words || item.aliases.some(alias => alias === words));
+export const electricity = {
+  prompt: 'Things that use electricity',
+  rule: 'The real object must be visibly powered by or explicitly designed to plug into electricity or run on batteries. Internal electronic components must be central to its operation.',
+  items: [
+    // Common (1 - 200)
+    { name: 'smartphone', aliases: ['cell phone', 'phone', 'mobile phone'], tier: RARITY.common, points: 15 },
+    { name: 'laptop', aliases: ['computer', 'notebook computer'], tier: RARITY.common, points: 30 },
+    { name: 'usb cable', aliases: ['phone charger', 'charging cable'], tier: RARITY.common, points: 50 },
+    { name: 'headphones', aliases: ['earbuds', 'wireless headphones'], tier: RARITY.common, points: 75 },
+    { name: 'smartwatch', aliases: ['watch', 'fitness tracker'], tier: RARITY.common, points: 100 },
+    { name: 'light bulb', aliases: ['lamp bulb', 'bulb'], tier: RARITY.common, points: 125 },
+    { name: 'power strip', aliases: ['surge protector', 'extension cord'], tier: RARITY.common, points: 150 },
+    { name: 'tablet', aliases: ['ipad'], tier: RARITY.common, points: 175 },
+    { name: 'computer mouse', aliases: ['mouse', 'wireless mouse'], tier: RARITY.common, points: 190 },
+    { name: 'keyboard', aliases: ['computer keyboard'], tier: RARITY.common, points: 200 },
+    // Uncommon (201 - 400)
+    { name: 'desk lamp', aliases: ['lamp', 'table lamp'], tier: RARITY.uncommon, points: 230 },
+    { name: 'microwave', aliases: ['microwave oven'], tier: RARITY.uncommon, points: 270 },
+    { name: 'refrigerator', aliases: ['fridge'], tier: RARITY.uncommon, points: 310 },
+    { name: 'coffee maker', aliases: ['espresso machine', 'coffeepot'], tier: RARITY.uncommon, points: 350 },
+    { name: 'toaster', aliases: ['bread toaster'], tier: RARITY.uncommon, points: 380 },
+    { name: 'electric fan', aliases: ['desk fan', 'box fan'], tier: RARITY.uncommon, points: 400 },
+    // Rare (401 - 600)
+    { name: 'blender', aliases: ['smoothie maker'], tier: RARITY.rare, points: 440 },
+    { name: 'hair dryer', aliases: ['blow dryer'], tier: RARITY.rare, points: 480 },
+    { name: 'monitor', aliases: ['computer monitor', 'display screen'], tier: RARITY.rare, points: 520 },
+    { name: 'router', aliases: ['wifi router', 'modem'], tier: RARITY.rare, points: 560 },
+    { name: 'printer', aliases: ['laser printer', 'inkjet printer'], tier: RARITY.rare, points: 580 },
+    { name: 'vacuum cleaner', aliases: ['vacuum'], tier: RARITY.rare, points: 600 },
+    // Super Rare (601 - 800)
+    { name: 'record player', aliases: ['turntable'], tier: RARITY.superRare, points: 660 },
+    { name: 'electric guitar', aliases: ['guitar'], tier: RARITY.superRare, points: 720 },
+    { name: 'projector', aliases: ['video projector'], tier: RARITY.superRare, points: 760 },
+    { name: 'air purifier', aliases: ['humidifier'], tier: RARITY.superRare, points: 790 },
+    { name: 'mini fridge', aliases: ['dorm fridge'], tier: RARITY.superRare, points: 800 },
+    // Ultra Rare (801 - 1000)
+    { name: 'oscilloscope', aliases: ['signal generator'], tier: RARITY.ultraRare, points: 880 },
+    { name: '3d printer', aliases: [], tier: RARITY.ultraRare, points: 930 },
+    { name: 'arcade cabinet', aliases: ['arcade machine'], tier: RARITY.ultraRare, points: 970 },
+    { name: 'server rack', aliases: ['mainframe'], tier: RARITY.ultraRare, points: 1000 },
+  ],
+} as const;
+
+export const tsr = {
+  prompt: 'Things that start with the letter T, S, or R',
+  rule: 'The real object must begin with the letter T, S, or R in its standard English common name. The object must be prominently visible.',
+  items: [
+    // Common (1 - 200)
+    { name: 'table', aliases: ['desk', 'worktable'], tier: RARITY.common, points: 20 },
+    { name: 'shoe', aliases: ['sneaker', 'footwear'], tier: RARITY.common, points: 40 },
+    { name: 'rug', aliases: ['carpet', 'mat'], tier: RARITY.common, points: 60 },
+    { name: 'shirt', aliases: ['t-shirt', 'top'], tier: RARITY.common, points: 90 },
+    { name: 'scissors', aliases: [], tier: RARITY.common, points: 120 },
+    { name: 'stapler', aliases: [], tier: RARITY.common, points: 150 },
+    { name: 'spoon', aliases: [], tier: RARITY.common, points: 180 },
+    { name: 'sock', aliases: [], tier: RARITY.common, points: 200 },
+    // Uncommon (201 - 400)
+    { name: 'toaster', aliases: [], tier: RARITY.uncommon, points: 240 },
+    { name: 'remote control', aliases: ['remote'], tier: RARITY.uncommon, points: 320 },
+    { name: 'refrigerator', aliases: ['fridge'], tier: RARITY.uncommon, points: 360 },
+    { name: 'stuffed animal', aliases: ['plushie', 'teddy bear'], tier: RARITY.uncommon, points: 400 },
+    // Rare (401 - 600)
+    { name: 'stopwatch', aliases: ['timer'], tier: RARITY.rare, points: 450 },
+    { name: 'router', aliases: ['wifi router'], tier: RARITY.rare, points: 500 },
+    { name: 'skateboard', aliases: ['longboard'], tier: RARITY.rare, points: 550 },
+    { name: 'sunglasses', aliases: ['shades'], tier: RARITY.rare, points: 600 },
+    // Super Rare (601 - 800)
+    { name: 'telescope', aliases: [], tier: RARITY.superRare, points: 680 },
+    { name: 'record player', aliases: ['turntable'], tier: RARITY.superRare, points: 740 },
+    { name: 'saxophone', aliases: ['horn'], tier: RARITY.superRare, points: 800 },
+    // Ultra Rare (801 - 1000)
+    { name: 'typewriter', aliases: [], tier: RARITY.ultraRare, points: 890 },
+    { name: 'rotary phone', aliases: ['telephone'], tier: RARITY.ultraRare, points: 950 },
+    { name: 'robot', aliases: ['robotic arm'], tier: RARITY.ultraRare, points: 1000 },
+  ],
+} as const;
+
+export const rounds = [blue, electricity, tsr] as const;
+export const TOTAL_ROUNDS = rounds.length;
+export type Category = typeof rounds[number];
+type DictionaryItem = { name: string; aliases: readonly string[]; tier: (typeof RARITY)[keyof typeof RARITY]; points: number };
+
+export function findItem(label: string, category: Category = blue) {
+  const words = label.toLowerCase().trim().replace(/^(a|an|the|blue)\s+/, '').replace(/\s+/g, ' ');
+  return (category.items as readonly DictionaryItem[]).find(item => item.name === words || item.aliases.some(alias => alias === words));
 }
