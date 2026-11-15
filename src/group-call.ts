@@ -48,11 +48,32 @@ async function release(attempt: Attempt) {
   if (current === attempt) current = undefined;
 }
 
+// Ask Chert to hang up the FaceTime call (the same request as the dashboard's "End call" button).
+async function endCall(id: string, headers: Record<string, string>) {
+  try {
+    const response = await fetch(`${chertCalls}/${encodeURIComponent(id)}/end`, {
+      method: 'POST', headers: { ...headers, 'Idempotency-Key': randomUUID(), 'Content-Type': 'application/json' },
+      body: '{}', signal: AbortSignal.timeout(8000),
+    });
+    console.info('[envoggle] Asked Chert to end the call: HTTP', response.status);
+  } catch {
+    console.warn('[envoggle] Could not reach Chert to end the call');
+  }
+}
+
+// Seconds a call may sit in Chert's "ending" state before we ask Chert to end it, and before we stop
+// waiting and free the line on our side anyway.
+const ENDING_NUDGE_MS = 15_000;
+const ENDING_GIVE_UP_MS = 45_000;
+
 async function watchCall(attempt: Attempt, id: string, headers: Record<string, string>) {
   let ready = false;
+  let endSent = false;
+  let endingSince = 0;
   // Stop watching (and free the line for the next game) when Chert reports the call over, when it
   // answers with a permanent error such as an invalid key or an unknown call, or after the bridge
-  // token's 90-minute lifetime.
+  // token's 90-minute lifetime. Deleting the LiveKit room (the referee's hang-up) does not always end
+  // the FaceTime call: Chert can stay in "ending", which keeps the line busy, so we end it explicitly.
   const giveUpAt = Date.now() + 95 * 60_000;
   while (Date.now() < giveUpAt) {
     try {
@@ -67,6 +88,23 @@ async function watchCall(attempt: Attempt, id: string, headers: Record<string, s
         if (!ready && Array.isArray(data?.facetime_call_events) && data.facetime_call_events.some((event: { event_type?: string }) => event.event_type === 'bridge_ready')) {
           await attempt.rooms.updateRoomMetadata(attempt.room, JSON.stringify({ chert_bridge_ready: true }));
           ready = true;
+        }
+        if (data?.status === 'ending') {
+          endingSince ||= Date.now();
+          if (!endSent && Date.now() - endingSince > ENDING_NUDGE_MS) {
+            endSent = true;
+            await endCall(id, headers);
+          } else if (Date.now() - endingSince > ENDING_GIVE_UP_MS) {
+            console.warn('[envoggle] Chert call still ending; freeing the line on our side');
+            break;
+          }
+        } else if (ready && !endSent) {
+          // The referee hung up by deleting the room: end the FaceTime call too.
+          const rooms = await attempt.rooms.listRooms([attempt.room]).catch(() => undefined);
+          if (rooms && rooms.length === 0) {
+            endSent = true;
+            await endCall(id, headers);
+          }
         }
       }
     } catch {
