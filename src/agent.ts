@@ -49,8 +49,10 @@ const FINAL_AFTER_MS = 12_000;
 function readWords(path: string) {
   try { return new Set(readFileSync(path, 'utf8').split('\n')); } catch { return new Set<string>(); }
 }
-const firstNames = readWords('/usr/share/dict/propernames');
-const dictionary = readWords('/usr/share/dict/words');
+// ENVOGGLE_DICT_DIR points elsewhere on Linux, where these files are not installed (copy the Mac's).
+const dictDir = process.env.ENVOGGLE_DICT_DIR ?? '/usr/share/dict';
+const firstNames = readWords(`${dictDir}/propernames`);
+const dictionary = readWords(`${dictDir}/words`);
 const nameWords = new Set(['rose', 'ava', 'kai', 'luna', 'aria', 'ivy', 'lily', 'hope', 'faith', 'joy', 'june', 'river', 'sky', 'jade', 'pearl', 'ruby', 'summer', 'autumn', 'dawn', 'maya', 'ming', 'grant', 'chase', 'hunter', 'mark', 'bill', 'pat', 'max', 'jack', 'drew', 'art', 'gene', 'ray', 'rich', 'jay', 'dean']);
 const notNames = new Set(['the', 'guys', 'bro', 'things', 'okay', 'nice', 'skip', 'envoggle', 'wave', 'yeah', 'yep', 'nope', 'hmm', 'lets', 'thats', 'whats', 'dont', 'cant', 'wont', 'didnt', 'isnt', 'youre', 'theyre', 'ive', 'ill', 'gonna', 'wanna', 'gotta', 'kinda', 'lol']);
 function isName(word: string) {
@@ -85,9 +87,11 @@ export default defineAgent({
     const audioTracks = new Map<number, string>();
     const stopReaders = new Map<string, () => void>();
     const autoSlots = new Map<string, number>();
-    // Voice: OpenAI when OPENAI_API_KEY is set; otherwise the Mac's built-in `say` (free, no quota;
-    // free-tier Gemini speech allows only 10 requests a day). ENVOGGLE_VOICE=gemini forces Gemini.
-    const localVoice = !openai && process.platform === 'darwin' && process.env.ENVOGGLE_VOICE !== 'gemini';
+    // Voice: OpenAI when OPENAI_API_KEY is set; otherwise a local voice (free, no quota; free-tier
+    // Gemini speech allows only 10 requests a day): the Mac's built-in `say`, or on Linux Piper with the
+    // voice model in ENVOGGLE_PIPER_MODEL. ENVOGGLE_VOICE=gemini forces Gemini.
+    const piperModel = process.env.ENVOGGLE_PIPER_MODEL;
+    const localVoice = !openai && (process.platform === 'darwin' || Boolean(piperModel)) && process.env.ENVOGGLE_VOICE !== 'gemini';
     const speaker: tts.TTS | undefined = openai
       ? new TTS({ model: 'gpt-4o-mini-tts', voice: 'alloy' })
       : localVoice ? undefined : new gemini.TTS({ apiKey: geminiKey, voiceName: 'Puck' });
@@ -172,16 +176,35 @@ export default defineAgent({
       }
     }
 
-    // Renders speech with macOS `say` to 16-bit mono PCM and plays it in 20 ms frames.
+    // Renders speech to a 16-bit mono WAV (macOS `say`, else Piper), resamples it to voiceRate if
+    // needed, and plays it in 20 ms frames.
     async function speakLocally(text: string) {
       const file = join(tmpdir(), `envoggle-${randomUUID()}.wav`);
       try {
-        await promisify(execFile)('say', ['-o', file, '--file-format=WAVE', `--data-format=LEI16@${voiceRate}`, text]);
+        if (process.platform === 'darwin' && !piperModel) {
+          await promisify(execFile)('say', ['-o', file, '--file-format=WAVE', `--data-format=LEI16@${voiceRate}`, text]);
+        } else {
+          await new Promise<void>((resolve, reject) => {
+            const piper = execFile(process.env.ENVOGGLE_PIPER ?? 'piper', ['-m', piperModel!, '-f', file], error => error ? reject(error) : resolve());
+            piper.stdin?.end(text);
+          });
+        }
         const wav = await readFile(file);
         let offset = 12;
-        while (offset + 8 <= wav.length && wav.toString('ascii', offset, offset + 4) !== 'data') offset += 8 + wav.readUInt32LE(offset + 4);
+        let rate = voiceRate;
+        while (offset + 8 <= wav.length && wav.toString('ascii', offset, offset + 4) !== 'data') {
+          if (wav.toString('ascii', offset, offset + 4) === 'fmt ') rate = wav.readUInt32LE(offset + 12);
+          offset += 8 + wav.readUInt32LE(offset + 4);
+        }
         const start = offset + 8;
-        const samples = new Int16Array(wav.buffer.slice(wav.byteOffset + start, wav.byteOffset + start + Math.floor((wav.length - start) / 2) * 2));
+        const source = new Int16Array(wav.buffer.slice(wav.byteOffset + start, wav.byteOffset + start + Math.floor((wav.length - start) / 2) * 2));
+        // Linear resampling (Piper voices are 22,050 Hz).
+        const samples = rate === voiceRate ? source : Int16Array.from({ length: Math.floor(source.length * voiceRate / rate) }, (_, index) => {
+          const position = index * rate / voiceRate;
+          const low = Math.floor(position);
+          const high = Math.min(source.length - 1, low + 1);
+          return Math.round(source[low] + (source[high] - source[low]) * (position - low));
+        });
         const step = voiceRate / 50;
         for (let index = 0; index < samples.length && !output.signal.aborted; index += step) {
           const chunk = new Int16Array(step);

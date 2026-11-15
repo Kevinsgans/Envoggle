@@ -162,9 +162,127 @@ export const price = {
   ],
 } as const;
 
-export const rounds = [blue, electricity, price] as const;
-export const TOTAL_ROUNDS = rounds.length;
+// Dictionary anchor whose tier is the 200-point band its points fall in.
+const band = (points: number) => points <= 200 ? RARITY.common : points <= 400 ? RARITY.uncommon : points <= 600 ? RARITY.rare : points <= 800 ? RARITY.superRare : RARITY.ultraRare;
+const anchor = (name: string, aliases: string[], points: number) => ({ name, aliases, tier: band(points), points });
+const SCREEN = 'A depiction on a screen does not qualify.';
+
+// Points from typical weight on a log scale: 1000 × (log10(kg) + 3) / 6. 1 g = 0, 1 kg = 500, 1,000 kg = 1000.
+export const heavy = {
+  prompt: 'Heaviest thing',
+  goal: 'Find the heaviest thing you can show',
+  rule: `Any real object counts; it does not need to be lifted, only shown clearly. People and animals do not count. ${SCREEN}`,
+  measure: 'its typical weight, on a log scale: 1 g is 1, 10 g is 167, 100 g is 333, 1 kg is 500, 10 kg is 667, 100 kg is 833, 1,000 kg or more is 1000',
+  tiers: ['Featherweight', 'Light', 'Hefty', 'Heavy', 'Massive'],
+  items: [
+    anchor('coin', ['quarter', 'penny'], 126), anchor('pen', ['pencil', 'marker'], 131), anchor('key', ['keys'], 167),
+    anchor('smartphone', ['phone', 'iphone'], 384), anchor('water bottle', ['bottle'], 451), anchor('book', ['textbook'], 499),
+    anchor('laptop', ['macbook', 'computer'], 534), anchor('guitar', ['acoustic guitar'], 581), anchor('backpack', ['bag'], 616),
+    anchor('chair', ['desk chair', 'office chair'], 641), anchor('bicycle', ['bike'], 681), anchor('mini fridge', ['refrigerator', 'fridge'], 717),
+    anchor('desk', ['table'], 767), anchor('couch', ['sofa'], 808), anchor('piano', ['upright piano'], 901), anchor('car', ['sedan', 'suv'], 998),
+  ],
+} as const;
+
+// Points from age since it was made on a log scale: 1000 × (log10(years) + 1) / 4. 1 year = 250, 10 = 500, 100 = 750.
+export const oldest = {
+  prompt: 'Oldest thing',
+  goal: 'Find the oldest thing you can',
+  rule: `The real object must be made by people; judge its age from its design, wear and model. Rocks, fossils, plants, people and animals do not count. ${SCREEN}`,
+  measure: 'how many years ago this object was made, on a log scale: a month is 1, 1 year is 250, 3 years is 369, 10 years is 500, 30 years is 619, 100 years is 750, 1,000 years or more is 1000',
+  tiers: ['Brand new', 'Recent', 'Seasoned', 'Vintage', 'Antique'],
+  items: [
+    anchor('snack', ['chips', 'candy bar', 'granola bar'], 3), anchor('smartphone', ['phone', 'iphone'], 326), anchor('laptop', ['macbook'], 369),
+    anchor('textbook', ['book'], 424), anchor('stuffed animal', ['teddy bear', 'plushie'], 521), anchor('vinyl record', ['record', 'lp'], 651),
+    anchor('film camera', ['polaroid camera'], 663), anchor('typewriter', [], 711), anchor('pocket watch', [], 749), anchor('antique coin', ['old coin'], 768),
+  ],
+} as const;
+
+// Points from the loudest sound it makes in normal use: 1000 × (dB − 20) / 110. 20 dB = 0, 75 dB = 500, 130 dB = 1000.
+export const loud = {
+  prompt: 'Loudest thing',
+  goal: 'Find the thing that can make the loudest sound',
+  rule: `The real object scores by the loudest sound it makes in normal use; it does not need to be making sound now. People, animals and voices do not count. ${SCREEN}`,
+  measure: 'the loudest sound it makes in normal use, in decibels: 20 dB is 1, 50 dB is 273, 75 dB is 500, 90 dB is 636, 100 dB is 727, 115 dB is 864, 130 dB or more is 1000',
+  tiers: ['Whisper', 'Quiet', 'Moderate', 'Loud', 'Deafening'],
+  items: [
+    anchor('pencil', ['pen'], 46), anchor('keyboard', ['computer keyboard'], 273), anchor('electric toothbrush', [], 318),
+    anchor('vacuum cleaner', ['vacuum'], 499), anchor('smartphone', ['phone', 'iphone'], 544), anchor('alarm clock', ['clock'], 591),
+    anchor('smoke alarm', ['smoke detector'], 592), anchor('hair dryer', ['blow dryer'], 636), anchor('blender', [], 681),
+    anchor('acoustic guitar', ['guitar'], 683), anchor('bluetooth speaker', ['speaker'], 727), anchor('trumpet', ['trombone', 'saxophone'], 863),
+    anchor('whistle', [], 864), anchor('air horn', ['airhorn'], 991),
+  ],
+} as const;
+
+// Points from food energy on a log scale: 1000 × log10(kcal) / 4. 10 kcal = 250, 100 = 500, 1,000 = 750, 10,000 = 1000.
+export const calories = {
+  prompt: 'Most calories',
+  goal: 'Find the food or drink with the most calories',
+  rule: `Real food or drink only, scored by everything in the container shown. Empty packaging and things that are not food score nothing. ${SCREEN}`,
+  measure: 'the total calories in the food or drink shown (the whole container), on a log scale: 1 kcal is 1, 10 kcal is 250, 100 kcal is 500, 300 kcal is 619, 1,000 kcal is 750, 3,000 kcal is 869, 10,000 kcal or more is 1000',
+  tiers: ['Crumb', 'Snack', 'Meal', 'Feast', 'Bulk'],
+  items: [
+    anchor('mint', ['breath mint', 'tic tac'], 76), anchor('gum', ['chewing gum'], 174), anchor('apple', [], 494), anchor('banana', [], 506),
+    anchor('soda can', ['soda', 'coke', 'can of soda'], 537), anchor('chip bag', ['bag of chips', 'chips'], 544), anchor('granola bar', ['protein bar'], 569),
+    anchor('energy drink', ['red bull', 'monster'], 586), anchor('candy bar', ['chocolate bar', 'snickers'], 599), anchor('instant ramen', ['ramen', 'cup noodles'], 646),
+    anchor('family size chips', ['family size bag of chips'], 801), anchor('whole pizza', ['pizza'], 841), anchor('cereal box', ['cereal', 'box of cereal'], 854),
+    anchor('peanut butter jar', ['peanut butter', 'jar of peanut butter'], 866), anchor('olive oil bottle', ['olive oil', 'cooking oil'], 976),
+  ],
+} as const;
+
+// Points from the longest dimension on a log scale: 1000 × log10(cm) / 3. 10 cm ≈ 333, 1 m ≈ 667, 10 m = 1000.
+export const longest = {
+  prompt: 'Longest thing',
+  goal: 'Find the longest thing you can show',
+  rule: `The real object scores by its longest dimension; a coiled cable or rope counts at full length. People and animals do not count. ${SCREEN}`,
+  measure: 'its longest dimension, on a log scale: 1 cm is 1, 3 cm is 159, 10 cm is 333, 30 cm is 492, 1 m is 667, 3 m is 826, 10 m or more is 1000',
+  tiers: ['Tiny', 'Short', 'Medium', 'Long', 'Giant'],
+  items: [
+    anchor('paper clip', ['paperclip'], 159), anchor('pen', ['pencil', 'marker'], 382), anchor('smartphone', ['phone', 'iphone'], 392),
+    anchor('ruler', [], 493), anchor('laptop', ['macbook'], 491), anchor('umbrella', [], 651), anchor('guitar', ['acoustic guitar', 'electric guitar'], 668),
+    anchor('broom', ['mop'], 716), anchor('yoga mat', ['exercise mat'], 746), anchor('extension cord', ['power strip cord', 'cable'], 888), anchor('garden hose', ['hose', 'rope'], 997),
+  ],
+} as const;
+
+// Points from the count of physical buttons on a log scale: 1000 × log10(n + 1) / log10(201). 1 = 131, 10 = 452, 100 ≈ 870, 200 = 1000.
+export const buttons = {
+  prompt: 'Thing with the most buttons',
+  goal: 'Find the thing with the most buttons',
+  rule: `Count only physical buttons, keys and switches on the real object; icons on a touchscreen do not count. ${SCREEN}`,
+  measure: 'how many physical buttons, keys and switches it has, on a log scale: 1 is 131, 3 is 261, 10 is 452, 30 is 648, 50 is 742, 100 is 871, 200 or more is 1000',
+  tiers: ['Few', 'Some', 'Many', 'Loads', 'Cockpit'],
+  items: [
+    anchor('pen', ['clicky pen'], 131), anchor('smartphone', ['phone', 'iphone'], 262), anchor('computer mouse', ['mouse'], 261),
+    anchor('game controller', ['controller', 'gamepad'], 546), anchor('calculator', ['scientific calculator', 'graphing calculator'], 701),
+    anchor('tv remote', ['remote', 'remote control'], 722), anchor('laptop', ['macbook'], 829), anchor('piano', ['keyboard piano', 'digital piano'], 846),
+    anchor('keyboard', ['computer keyboard'], 878), anchor('mixing desk', ['mixer', 'soundboard'], 998),
+  ],
+} as const;
+
+// Judged, not measured: how unexpected the object is in a dorm or study room.
+export const weird = {
+  prompt: 'Weirdest thing',
+  goal: 'Find the weirdest thing you own',
+  rule: `Any real object counts. People and animals do not count. ${SCREEN}`,
+  measure: 'how strange and unexpected it is to find in a student\'s room: 1 is utterly ordinary (a pen), 500 is a fun oddity (a rubber duck), 1000 is something nobody would believe you own (a suit of armour). Everyday items stay under 150',
+  tiers: ['Normal', 'Quirky', 'Odd', 'Weird', 'Bizarre'],
+  items: [
+    anchor('pen', ['pencil'], 4), anchor('water bottle', ['bottle'], 12), anchor('mug', ['cup'], 23), anchor('stuffed animal', ['teddy bear', 'plushie'], 238),
+    anchor('rubber duck', ['rubber ducky'], 497), anchor('lava lamp', [], 563), anchor('fake mustache', ['moustache'], 641),
+    anchor('traffic cone', ['cone'], 733), anchor('mannequin head', ['mannequin'], 812), anchor('taxidermy', ['stuffed animal head', 'mounted head'], 917),
+  ],
+} as const;
+
+// Every category; each match plays ROUNDS_PER_MATCH of them, drawn at random.
+export const rounds = [blue, electricity, price, heavy, oldest, loud, calories, longest, buttons, weird] as const;
+export const ROUNDS_PER_MATCH = 3;
 export type Category = typeof rounds[number];
+
+// A match's categories: indexes into `rounds`, no repeats, avoiding the previous match's where possible.
+export function drawRounds(previous: readonly number[] = [], random = Math.random) {
+  const shuffle = (list: number[]) => list.map(index => ({ index, key: random() })).sort((a, b) => a.key - b.key).map(item => item.index);
+  const fresh = shuffle(rounds.map((_, index) => index).filter(index => !previous.includes(index)));
+  return [...fresh, ...shuffle([...previous])].slice(0, ROUNDS_PER_MATCH);
+}
 type DictionaryItem = { name: string; aliases: readonly string[]; tier: (typeof RARITY)[keyof typeof RARITY]; points: number };
 
 // The reveal tag for a score in a round: the name of its 200-point band.

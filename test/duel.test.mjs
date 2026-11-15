@@ -21,6 +21,7 @@ afterEach(() => {
 function start(mock) {
   mock.timers.enable({ apis: ['setTimeout', 'Date'] });
   const duel = new Duel('ABCDEF12');
+  duel.order = [0, 1, 2]; // blue first: these tests use its dictionary
   active.add(duel);
   duel.accepted = true;
   duel.ready(0, false);

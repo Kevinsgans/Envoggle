@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { rounds, TOTAL_ROUNDS } from './categories.js';
+import { drawRounds, rounds, ROUNDS_PER_MATCH } from './categories.js';
 import sharp from 'sharp';
 import { FOCUS_MS, SCAN_MIN_MS, type Presentation } from './find-visual.js';
 import { judgeFind, type JudgedResult, type Result } from './judge.js';
@@ -44,6 +44,8 @@ export class Duel {
   // Category for the current round (0-based). Only scored rounds advance it, so a void round
   // replays the same category; `round` still counts every attempt.
   stage = 0;
+  // This match's categories (indexes into `rounds`).
+  order = drawRounds();
   private scoredRounds = 0;
   message = '';
   round = 1;
@@ -52,12 +54,14 @@ export class Duel {
 
   constructor(readonly code: string) {}
 
+  get category() { return rounds[this.order[this.stage]]; }
+
   state(slot: number) {
     const entry = this.entries[slot];
     return {
       code: this.code, accepted: this.accepted, phase: this.phase, round: this.round,
-      stage: this.stage + 1, totalRounds: TOTAL_ROUNDS, totalScores: this.totalScores, history: this.history, completed: this.scoredRounds >= TOTAL_ROUNDS && this.phase === 'result',
-      deadline: this.deadline, serverTime: Date.now(), prompt: rounds[this.stage].prompt, goal: rounds[this.stage].goal, ready: this.players.map(player => player.ready),
+      stage: this.stage + 1, totalRounds: ROUNDS_PER_MATCH, totalScores: this.totalScores, history: this.history, completed: this.scoredRounds >= ROUNDS_PER_MATCH && this.phase === 'result',
+      deadline: this.deadline, serverTime: Date.now(), prompt: this.category.prompt, goal: this.category.goal, ready: this.players.map(player => player.ready),
       locked: this.entries.map(find => Boolean(find.frame)), message: this.message,
       guesses: entry.done ? [] : entry.guesses, options: entry.options, confirmed: entry.done,
       results: this.results, presentation: this.presentation, retentionEnabled: Boolean(process.env.TRAINING_DATA_DIR), slot,
@@ -71,7 +75,8 @@ export class Duel {
     if (!this.players.every(player => player.ready)) return;
     if (this.phase !== 'lobby') this.round++;
     // After the last category, the next start begins a new match.
-    if (this.scoredRounds >= TOTAL_ROUNDS) {
+    if (this.scoredRounds >= ROUNDS_PER_MATCH) {
+      this.order = drawRounds(this.order);
       this.scoredRounds = 0;
       this.totalScores = [0, 0];
       this.history = [];
@@ -140,7 +145,7 @@ export class Duel {
     const isCurrent = () => entries === this.entries && this.phase === 'scoring';
     try {
       const judge = (entry: Entry): Promise<JudgedResult> => entry.frame
-        ? judgeFind(entry.frame, rounds[this.stage])
+        ? judgeFind(entry.frame, this.category)
         : Promise.resolve({ label: 'No find', points: 0, reason: 'No camera view was captured.', unlisted: false, safeToRetain: false });
       const [{ geometry: firstFind, ...first }, { geometry: secondFind, ...second }] = await Promise.all([judge(entries[0]), judge(entries[1])]);
       if (!isCurrent()) return;
@@ -160,7 +165,7 @@ export class Duel {
       const results: [Result, Result] = [first, second];
       this.results = results;
       results.forEach((result, slot) => { this.totalScores[slot] += result.points; });
-      this.history.push({ prompt: rounds[this.stage].prompt, points: [results[0].points, results[1].points] });
+      this.history.push({ prompt: this.category.prompt, points: [results[0].points, results[1].points] });
       this.scoredRounds++;
       this.phase = 'result';
       results.forEach((result, slot) => {
@@ -214,7 +219,7 @@ export class Duel {
     const directory = `${process.env.TRAINING_DATA_DIR}/${randomUUID()}`;
     await mkdir(directory, { recursive: true, mode: 0o700 });
     await writeFile(`${directory}/frame.jpg`, frame, { mode: 0o600 });
-    await writeFile(`${directory}/label.json`, JSON.stringify({ label, category: rounds[this.stage].prompt }), { mode: 0o600 });
+    await writeFile(`${directory}/label.json`, JSON.stringify({ label, category: this.category.prompt }), { mode: 0o600 });
   }
 }
 
