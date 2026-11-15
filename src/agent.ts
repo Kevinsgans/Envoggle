@@ -110,9 +110,13 @@ export default defineAgent({
     const audio = new AudioSource(speaker?.sampleRate ?? voiceRate, speaker?.numChannels ?? 1);
     const video = new VideoSource(tileWidth, tileHeight);
     const output = new AbortController();
-    // Demo recording (ENVOGGLE_RECORD_DIR): started on the first frame, once the room has its name.
+    // Demo recording (ENVOGGLE_RECORD_DIR): starts once FaceTime is connected (bridge ready), so the
+    // idle waiting room between calls is never recorded.
     let recorder: Recorder | undefined | null = null;
-    const rec = () => recorder === null ? (recorder = Recorder.start(room.name || 'call')) : recorder;
+    const rec = () => {
+      if (recorder === null && bridgeReady(room.metadata)) recorder = Recorder.start(room.name || 'call');
+      return recorder ?? undefined;
+    };
     const speak = (frame: AudioFrame) => {
       rec()?.audio('referee-voice', frame, true);
       return audio.captureFrame(frame);

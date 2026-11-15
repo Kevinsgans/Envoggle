@@ -43,7 +43,13 @@ const server = createServer(async (request, response) => {
       if (request.headers['content-type']?.split(';')[0].trim().toLowerCase() !== 'application/json') {
         return json(415, { error: 'Send the game call request as JSON.' });
       }
-      await startGroupCall(JSON.parse((await read(4096)).toString()));
+      console.info('[envoggle] Game call requested');
+      try { await startGroupCall(JSON.parse((await read(4096)).toString())); }
+      catch (error) {
+        console.warn('[envoggle] Game call refused:', error instanceof GroupCallError ? `${error.status} ${error.message}` : error instanceof Error ? error.message : 'unknown error');
+        throw error;
+      }
+      console.info('[envoggle] Game call placed with Chert');
       return json(202, { requested: true });
     }
     const match = url.pathname.match(/^\/api\/duels\/([a-f0-9]{8})(?:\/([a-z]+))?$/i);
