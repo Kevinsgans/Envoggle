@@ -402,11 +402,11 @@ export default defineAgent({
             namingStarted = Date.now();
             say('Before we play, find your colour on the referee screen. Orange player, say your name.');
           }
-          // Refresh the live camera previews on the names screen once a second.
+          // Refresh the live camera previews on the names screen once a second, mirrored like a selfie view.
           if (namingStarted && !namingDone && Date.now() - previewedAt > 1000) {
             previewedAt = Date.now();
             void Promise.all(slots.map(slot => fresh(slot)
-              ? capture(slot).then(jpeg => sharp(jpeg).resize(300, 300, { fit: 'cover' }).jpeg({ quality: 70 }).toBuffer()).catch(() => undefined)
+              ? capture(slot).then(jpeg => sharp(jpeg).flop().resize(300, 300, { fit: 'cover' }).jpeg({ quality: 70 }).toBuffer()).catch(() => undefined)
               : Promise.resolve(undefined))).then(next => { previews = next; });
           }
           // Naming ends when both have names, someone says skip or start, or after 40 s.
