@@ -41,7 +41,7 @@ test('plays three different categories, replays a void round, and stops after th
 });
 
 test('every category has five tier names and anchors inside 1 to 1000', () => {
-  assert.equal(rounds.length, 15);
+  assert.equal(rounds.length, 8);
   assert.equal(new Set(rounds.map(round => round.prompt)).size, rounds.length);
   for (const round of rounds) {
     assert.equal(round.tiers.length, 5, round.prompt);
