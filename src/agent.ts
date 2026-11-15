@@ -301,7 +301,7 @@ export default defineAgent({
       const state = await api(0, 'state');
       say(state.retentionEnabled && !split()
         ? 'Both players are in. Vision training is optional. Envoggle may license or sell confirmed images and labels to third parties for vision model training. Say start to play, or say start and save my frame to opt in.'
-        : names.every(Boolean) ? `${names[0]} and ${names[1]}, say start to play.` : 'Say start to play.');
+        : 'Say start.');
     }
 
     async function command(slot: number, transcript: string) {
@@ -316,7 +316,7 @@ export default defineAgent({
         names[target] = name;
         console.info('[envoggle] Player', target + 1, 'is named', JSON.stringify(name));
         const next = names.findIndex(known => !known);
-        say(next < 0 ? `Hi ${name}.` : `Hi ${name}. ${DEFAULT_NAMES[next]} player, say your name.`);
+        say(next < 0 ? `Hi ${name}.` : `Hi ${name}. ${DEFAULT_NAMES[next]}, say your name.`);
         if (next < 0) namingDone = true;
         return;
       }
@@ -415,9 +415,7 @@ export default defineAgent({
     const greet = () => {
       if (greeted || !bridgeReady(room.metadata)) return;
       greeted = true;
-      say(readyMedia()
-        ? 'Envoggle referee here.'
-        : 'Envoggle referee here. Waiting for both players to join with their rear cameras on.');
+      say('Envoggle referee here.');
     };
     room.on(RoomEvent.RoomMetadataChanged, greet);
 
@@ -441,7 +439,7 @@ export default defineAgent({
         const seconds = Math.max(0, Math.ceil((first.deadline - first.serverTime - (Date.now() - syncedAt)) / 1000));
         if (seconds === 5 && lastCountdown !== `${first.round}:5`) {
           lastCountdown = `${first.round}:5`;
-          say('Five seconds. Hold your find up to the camera.');
+          say('Five seconds. Hold it up.');
         }
         return { kind: 'hunt', names: players, prompt: first.prompt, seconds: Math.min(seconds, huntSeconds), total: huntSeconds, locked: first.locked };
       }
@@ -497,12 +495,13 @@ export default defineAgent({
           spokenCaption = identifier;
           const [a, b] = first.results;
           const [one, two] = next.names;
-          const round = a.points === b.points ? 'This round is a draw.' : `${a.points > b.points ? one : two} wins this round.`;
+          // Short on purpose: the tile shows each find and tier, and the final screen the totals.
+          const round = a.points === b.points ? 'Draw.' : `${a.points > b.points ? one : two} wins.`;
           const [x, y] = first.totalScores;
-          const total = first.completed
-            ? `Final score: ${one} ${x}, ${two} ${y}. ${x === y ? 'The match is a draw.' : `${x > y ? one : two} wins the match!`} Say start for a new match.`
-            : `Total so far: ${one} ${x}, ${two} ${y}. Say continue for round ${first.stage + 1}.`;
-          say(`${one}: ${a.label}, ${a.points} points. ${a.reason} ${two}: ${b.label}, ${b.points} points. ${b.reason} ${round} ${total}`);
+          const end = !first.completed ? ''
+            : x === y ? `The match is a draw, ${x} each.` : `${x > y ? one : two} wins the match, ${Math.max(x, y)} to ${Math.min(x, y)}.`;
+          const find = (result: typeof a) => result.points > 0 ? `${result.label}, ${result.points}` : 'nothing';
+          say(`${one}: ${find(a)}. ${two}: ${find(b)}. ${round} ${end}`.trim());
         }
       }
     }
@@ -515,7 +514,7 @@ export default defineAgent({
         if (!code) {
           if (readyMedia() && !namingStarted) {
             namingStarted = Date.now();
-            say('Before we play, find your colour on the referee screen. Orange player, say your name.');
+            say('Orange, say your name.');
           }
           // Refresh the live camera previews on the names screen once a second, mirrored like a selfie view.
           if (namingStarted && !namingDone && Date.now() - previewedAt > 1000) {
@@ -547,7 +546,7 @@ export default defineAgent({
             if (first.phase === 'hunt' && !readyMedia()) await api(0, 'drop', {});
             let announcement = '';
             if (first.phase === 'hunt') {
-              announcement = `Round ${first.stage} of ${first.totalRounds}: ${first.prompt}. ${first.goal} and hold it up when time runs out. Go!`;
+              announcement = `Round ${first.stage}: ${first.prompt}. Go!`;
               if (capturedRound !== first.round) {
                 capturedRound = first.round;
                 clearTimeout(captureTimer);
