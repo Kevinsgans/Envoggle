@@ -111,7 +111,8 @@ function actionButton(text: string, onClick: () => void) {
 function render(current: State) {
   if (state && current.serverTime < state.serverTime) return;
   state = current;
-  element('scan-stage').hidden = current.phase === 'result' || current.phase === 'void' || (current.phase === 'hunt' && !current.locked[current.slot]);
+  // Only while this player's locked photo is waiting to be scored; never in the lobby or before a lock.
+  element('scan-stage').hidden = !current.locked[current.slot] || !['hunt', 'confirm', 'scoring'].includes(current.phase);
   clockOffset = current.serverTime - Date.now();
   element('arena').hidden = false;
   element('prompt').textContent = current.prompt;

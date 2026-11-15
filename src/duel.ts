@@ -23,9 +23,11 @@ async function segmentObject(image: Buffer) {
   const masks = await pipeline([input]);
   const mask = masks?.[0];
   if (!mask?.data || !mask.width || !mask.height) throw new Error('Segmentation returned no mask');
-  const alpha = await sharp(Buffer.from(mask.data), { raw: { width: mask.width, height: mask.height, channels: mask.channels } })
-    .greyscale().resize(decoded.info.width, decoded.info.height).raw().toBuffer();
-  return sharp(image).ensureAlpha().joinChannel(alpha, { raw: { width: decoded.info.width, height: decoded.info.height, channels: 1 } }).png().toBuffer();
+  // The pipeline returns the image with the background cut away (RGBA); its alpha channel is the mask.
+  const raw = sharp(Buffer.from(mask.data), { raw: { width: mask.width, height: mask.height, channels: mask.channels } });
+  const alpha = await (mask.channels === 4 ? raw.extractChannel(3) : raw.greyscale())
+    .resize(decoded.info.width, decoded.info.height).raw().toBuffer();
+  return sharp(decoded.data, { raw: decoded.info }).joinChannel(alpha, { raw: { width: decoded.info.width, height: decoded.info.height, channels: 1 } }).png().toBuffer();
 }
 export class Duel {
   readonly players = [blank(), blank()];
