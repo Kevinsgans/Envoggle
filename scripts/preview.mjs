@@ -147,8 +147,8 @@ createServer(async (request, response) => {
         elapsed: elapsed - countUpStart, targets: (custom ?? reveal[0]).results.map(result => result.points),
       } : undefined,
     } : undefined;
-    const view = screen === 'hunt' && Number.isInteger(seconds) && seconds >= 0 && seconds <= total
-      ? { kind: 'hunt', names, prompt, seconds, total, locked: [seconds === 0, seconds === 0] }
+    const view = screen === 'hunt' && Number.isFinite(seconds) && seconds >= 0 && seconds <= total
+      ? { kind: 'hunt', names, prompt, remainingMs: seconds * 1000, locked: [seconds === 0, seconds === 0], animate: url.searchParams.get('static') !== '1' }
       : screen === 'scoring' ? scoring : screen === 'photo-result' ? custom : screens.get(screen);
     if (view) {
       try {

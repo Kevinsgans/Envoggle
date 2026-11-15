@@ -120,6 +120,8 @@
     seconds.max = seconds.value = String(total);
     let timer;
     let scoringStart;
+    let huntDeadline;
+    let huntRemaining;
     let photoPreview;
 
     function render() {
@@ -131,6 +133,10 @@
         query.set('screen', 'scoring');
         if (scoringStart !== undefined) query.set('elapsed', String(Math.round(performance.now() - scoringStart)));
         tile.src = `/tile.svg?${query}`;
+      } else if (screen.value === 'hunt') {
+        if (huntRemaining === undefined) query.set('static', '1');
+        else query.set('seconds', String(huntRemaining / 1000));
+        tile.src = `/tile.svg?${query}`;
       } else tile.src = `/tile.png?${query}`;
     }
 
@@ -138,6 +144,7 @@
       clearTimeout(timer);
       timer = undefined;
       scoringStart = undefined;
+      huntDeadline = undefined;
       play.textContent = 'Play countdown';
     }
 
@@ -147,12 +154,11 @@
           screen.value = screen.value === 'photo-scoring' ? 'photo-result' : 'blue-wins';
           pause();
         } else timer = setTimeout(tick, previewFrameMs);
-      } else if (Number(seconds.value) > 0) {
-        seconds.value = String(Number(seconds.value) - 1);
-        timer = setTimeout(tick, 1000);
       } else {
-        startScoring();
-        return;
+        huntRemaining = Math.max(0, huntDeadline - performance.now());
+        seconds.value = String(Math.ceil(huntRemaining / 1000));
+        if (huntRemaining === 0) return startScoring();
+        timer = setTimeout(tick, previewFrameMs);
       }
       render();
     }
@@ -160,16 +166,18 @@
     function startScoring(usePhotos = false) {
       pause();
       screen.value = usePhotos ? 'photo-scoring' : 'scoring';
+      huntRemaining = undefined;
       seconds.value = '0';
       scoringStart = performance.now();
       play.textContent = 'Pause playback';
       tick();
     }
 
-    screen.onchange = () => { pause(); render(); };
-    seconds.oninput = () => { pause(); screen.value = 'hunt'; render(); };
+    screen.onchange = () => { pause(); huntRemaining = undefined; render(); };
+    seconds.oninput = () => { pause(); huntRemaining = undefined; screen.value = 'hunt'; render(); };
     document.getElementById('final').onclick = () => {
       pause();
+      huntRemaining = undefined;
       screen.value = 'hunt';
       seconds.value = String(Math.min(5, total));
       render();
@@ -178,11 +186,14 @@
     replayPhotos.onclick = () => startScoring(true);
     play.onclick = () => {
       if (timer !== undefined) return pause();
-      if (screen.value !== 'hunt' || Number(seconds.value) === 0) seconds.value = String(total);
+      if (screen.value !== 'hunt' || Number(seconds.value) === 0) {
+        seconds.value = String(total);
+        huntRemaining = undefined;
+      }
       screen.value = 'hunt';
       play.textContent = 'Pause playback';
-      timer = setTimeout(tick, 1000);
-      render();
+      huntDeadline = performance.now() + (huntRemaining ?? Number(seconds.value) * 1000);
+      tick();
     };
     crop.onchange = () => {
       document.getElementById('viewport').classList.toggle('cropped', crop.checked);

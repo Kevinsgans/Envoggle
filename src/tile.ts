@@ -1,4 +1,5 @@
 import { RARITY } from './categories.js';
+import { HUNT_DURATION_MS, countdownFrame } from './countdown.js';
 import { renderPhoto, type FindGeometry, type Photo } from './find-visual.js';
 import { countUpScore, renderScore } from './score-display.js';
 
@@ -29,7 +30,7 @@ export type View =
   | { kind: 'message'; title: string; detail: string }
   | { kind: 'names'; names: (string | undefined)[]; turn: number; frames: (Buffer | undefined)[] }
   | { kind: 'ready'; names: string[]; prompt: string }
-  | { kind: 'hunt'; names: string[]; prompt: string; seconds: number; total: number; locked: boolean[] }
+  | { kind: 'hunt'; names: string[]; prompt: string; remainingMs: number; locked: boolean[]; animate?: boolean }
   | (Finds & { kind: 'scoring'; focus: number; scan?: number; countUp?: { elapsed: number; targets: (number | null)[] } })
   | (Finds & { kind: 'reveal'; results: Result[] });
 
@@ -92,20 +93,21 @@ function players(names: string[], status: string[], dim: boolean[] = [false, fal
   };
 }
 
-function ring(seconds: number, total: number, color: string, size: number, numberSize: number, label?: string) {
+function ring(frame: ReturnType<typeof countdownFrame>, size: number, numberSize: number) {
   const r = size / 2 - 18;
   const circumference = 2 * Math.PI * r;
-  const left = Math.max(0, Math.min(1, seconds / total));
+  const { seconds, blend, color, progress } = frame;
   return {
     height: size,
     draw: (top: number) => {
       const cx = TILE_WIDTH / 2;
       const cy = top + size / 2;
-      const numberTop = cy - numberSize * (label ? 0.62 : 0.5) + 2;
+      const numberTop = cy - numberSize * 0.62 + 2;
+      const previous = blend < 1 ? `<g opacity="${1 - blend}">${text(String(seconds + 1), cx, numberTop - 18 * blend, numberSize, { weight: 800 })}</g>` : '';
+      const arc = progress > 0 ? `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="18" stroke-linecap="round" stroke-dasharray="${circumference.toFixed(2)}" stroke-dashoffset="${(circumference * (1 - progress)).toFixed(2)}" transform="rotate(-90 ${cx} ${cy})"/>` : '';
       return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${track}" stroke-width="18"/>` +
-        `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="18" stroke-dasharray="${circumference.toFixed(1)}" stroke-dashoffset="${(circumference * (1 - left)).toFixed(1)}" transform="rotate(-90 ${cx} ${cy})"/>` +
-        text(String(seconds), cx, numberTop, numberSize, { weight: 800, fill: label ? ink : color }) +
-        (label ? text(label, cx, numberTop + numberSize * 0.9, 26, { fill: muted }) : '');
+        arc + previous + `<g opacity="${blend}">${text(String(seconds), cx, numberTop + 18 * (1 - blend), numberSize, { weight: 800 })}</g>` +
+        text('seconds', cx, numberTop + numberSize * 0.94, 26, { fill: muted });
     },
   };
 }
@@ -204,24 +206,19 @@ export function renderTile(view: View) {
     const category = heading('NEXT CATEGORY', view.prompt, 64);
     body = stack([
       { height: 24, draw: top => logo(center, top) },
-      { height: category.height + 48, draw: top => category.draw(top) + text('30 seconds · rarest find wins', center, top + category.height + 14, 28, { fill: muted }) },
+      { height: category.height + 48, draw: top => category.draw(top) + text(`${HUNT_DURATION_MS / 1000} seconds · rarest find wins`, center, top + category.height + 14, 28, { fill: muted }) },
       { height: 200, draw: top => `<rect x="80" y="${top}" width="560" height="200" fill="${lime}"/>` + mic(center, top + 30, ground) + text('Say “start”', center, top + 104, 72, { weight: 800, fill: ground }) },
       players(view.names, ['In', 'In']),
     ], 44);
   } else if (view.kind === 'hunt') {
-    const final = view.seconds <= 5;
-    body = final
-      ? stack([
-        heading('FIND', view.prompt, 44),
-        ring(view.seconds, view.total, yellow, 340, 230),
-        { height: 92, draw: top => `<rect x="80" y="${top}" width="560" height="92" fill="${yellow}"/>` + text('Hold it up to the camera', center, top + 24, 42, { weight: 800, fill: ground }) },
-        players(view.names, view.locked.map(locked => locked ? 'Captured' : 'Hunting')),
-      ], 32)
-      : stack([
-        heading('FIND', view.prompt, 64),
-        ring(view.seconds, view.total, lime, 340, 170, 'seconds'),
-        players(view.names, view.locked.map(locked => locked ? 'Captured' : 'Hunting')),
-      ], 40);
+    const frame = countdownFrame(view.remainingMs, view.animate);
+    body = stack([
+      heading('FIND', view.prompt, 48),
+      ring(frame, 328, 166),
+      { height: 64, draw: top => frame.urgency > 0 ? `<g opacity="${frame.urgency}"><rect x="80" y="${top}" width="560" height="64" fill="${yellow}"/>` +
+        text('Hold it up to the camera', center, top + 13, 36, { weight: 800, fill: ground }) + '</g>' : '' },
+      players(view.names, view.locked.map(locked => locked ? 'Captured' : 'Hunting')),
+    ], 27);
   } else body = findCards(view);
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${TILE_WIDTH}" height="${TILE_HEIGHT}"><rect width="${TILE_WIDTH}" height="${TILE_HEIGHT}" fill="${ground}"/>${body}</svg>`;
 }

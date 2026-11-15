@@ -13,8 +13,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import sharp from 'sharp';
+import { FINAL_COUNTDOWN_MS, HuntClock } from './countdown.js';
 import type { Duel } from './duel.js';
 import { focusProgress, scanProgress, type Photo } from './find-visual.js';
+import { GROUP_CALL_JOB, GROUP_REFEREE } from './group-call.js';
 import { findTiles, type Tile } from './layout.js';
 import { COUNT_UP_MS } from './score-display.js';
 import { DEFAULT_NAMES, TILE_HEIGHT, TILE_WIDTH, renderTile, type View } from './tile.js';
@@ -38,7 +40,6 @@ const captureLead = 900;
 
 const tileWidth = TILE_WIDTH;
 const tileHeight = TILE_HEIGHT;
-const huntSeconds = 30;
 
 // Turns "hi, my name is alex" into "Alex". Returns undefined for anything that is not a name.
 function parseName(words: string) {
@@ -60,6 +61,7 @@ export default defineAgent({
     const geminiKey = process.env.GEMINI_API_KEY;
     if (!key || (!openai && !geminiKey)) throw new Error('REFEREE_KEY and GEMINI_API_KEY (or OPENAI_API_KEY) are required');
     const room = context.room;
+    const outboundGroup = context.job.metadata === GROUP_CALL_JOB;
     const cameras = new Map<number, Camera>();
     const videoTracks = new Map<number, string>();
     const audioTracks = new Map<number, string>();
@@ -89,6 +91,7 @@ export default defineAgent({
     let speech = Promise.resolve();
     let pendingStatus = false;
     let lastStatusCheck = 0;
+    const huntClock = new HuntClock();
     let countClock: { startedAt: number; elapsed: number } | undefined;
     let ticking = false;
     let tickTimer: ReturnType<typeof setTimeout> | undefined;
@@ -393,12 +396,13 @@ export default defineAgent({
         return { kind: 'message', title: 'Setting up the round', detail: 'One moment' };
       }
       if (first.phase === 'hunt') {
-        const seconds = Math.max(0, Math.ceil((first.deadline - first.serverTime - (Date.now() - syncedAt)) / 1000));
-        if (seconds === 5 && lastCountdown !== `${first.round}:5`) {
-          lastCountdown = `${first.round}:5`;
+        const remainingMs = huntClock.remaining();
+        const countdownId = `${code}:${first.round}`;
+        if (remainingMs > 0 && remainingMs <= FINAL_COUNTDOWN_MS && lastCountdown !== countdownId) {
+          lastCountdown = countdownId;
           say('Five seconds. Hold your find up to the camera.');
         }
-        return { kind: 'hunt', names: players, prompt: first.prompt, seconds: Math.min(seconds, huntSeconds), total: huntSeconds, locked: first.locked };
+        return { kind: 'hunt', names: players, prompt: first.prompt, remainingMs: Math.round(remainingMs), locked: first.locked };
       }
       const photos = photoRound?.id === `${code}:${first.round}` ? photoRound.photos : [];
       const presentation = first.presentation;
@@ -455,6 +459,10 @@ export default defineAgent({
       ticking = true;
       try {
         await checkLayout();
+        if (outboundGroup && !bridgeReady(room.metadata)) {
+          await scoreboard();
+          return;
+        }
         if (!code) {
           if (readyMedia() && !namingStarted) {
             namingStarted = Date.now();
@@ -490,6 +498,7 @@ export default defineAgent({
             if (first.phase === 'hunt' && !readyMedia()) await api(0, 'drop', {});
             let announcement = '';
             if (first.phase === 'hunt') {
+              huntClock.sync(first.deadline, first.serverTime);
               announcement = `${first.prompt}. Find the rarest thing you can and hold it up when time runs out. Go!`;
               if (capturedRound !== first.round) {
                 capturedRound = first.round;
@@ -516,7 +525,7 @@ export default defineAgent({
       const counting = current?.phase === 'scoring' && current.presentation?.countUp !== undefined;
       tickTimer = setTimeout(() => {
         void tick().catch(() => console.error('[envoggle] Scoreboard update failed')).finally(scheduleTick);
-      }, counting ? 100 : 200);
+      }, current?.phase === 'hunt' ? 50 : counting ? 100 : 200);
     }
     scheduleTick();
     // Debug only: with ENVOGGLE_DEBUG_FRAMES set to a folder, save each player's current frame every 2 s.
@@ -554,5 +563,9 @@ if (process.argv.includes('--check-media-config')) {
     process.exitCode = 1;
   }
 } else {
-  cli.runApp(new ServerOptions({ agent: fileURLToPath(import.meta.url), agentName: process.env.AGENT_NAME || 'envoggle-referee' }));
+  cli.runApp(new ServerOptions({
+    agent: fileURLToPath(import.meta.url),
+    agentName: process.env.AGENT_NAME || GROUP_REFEREE,
+    requestFunc: request => request.job.metadata === GROUP_CALL_JOB ? request.accept('Envoggle', GROUP_REFEREE) : request.accept(),
+  }));
 }
