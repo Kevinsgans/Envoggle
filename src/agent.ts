@@ -1,10 +1,12 @@
 import { fileURLToPath } from 'node:url';
-import { AutoSubscribe, ServerOptions, cli, defineAgent, stt } from '@livekit/agents';
+import { AutoSubscribe, ServerOptions, cli, defineAgent, stt, tts } from '@livekit/agents';
+import { beta as gemini } from '@livekit/agents-plugin-google';
 import { STT, TTS } from '@livekit/agents-plugin-openai';
 import {
   AudioSource, AudioStream, LocalAudioTrack, LocalVideoTrack, RoomEvent, TrackKind, TrackPublishOptions,
   TrackSource, VideoBufferType, VideoFrame, VideoRotation, VideoSource, VideoStream,
 } from '@livekit/rtc-node';
+import { writeFile } from 'node:fs/promises';
 import sharp from 'sharp';
 import type { Duel } from './duel.js';
 
@@ -18,30 +20,63 @@ const matchers = [1, 2].map(number => ({
   audio: process.env[`CHERT_PLAYER_${number}_AUDIO_TRACK`],
   video: process.env[`CHERT_PLAYER_${number}_VIDEO_TRACK`],
 }));
+// Without CHERT_PLAYER_* settings, each remote participant becomes the next free player slot.
+const autoAssign = !matchers.some(matcher => matcher.identity || matcher.audio || matcher.video);
+// Words the players say to the referee, to bias Gemini transcription.
+const vocabulary = ['Envoggle', 'start', 'start and save my frame', 'rematch', 'yes', 'no', 'none of these', 'my item is'];
+// In a Group FaceTime call, Chert (beta.21) sends one capture of its FaceTime window with player 1
+// in the left tile and player 2 in the right tile. Tile edges as fractions of that window frame.
+const tiles = [
+  { left: 0.334, right: 0.490, top: 0.280, bottom: 0.562 },
+  { left: 0.510, right: 0.666, top: 0.280, bottom: 0.562 },
+];
+// Lock both players this long before the server's deadline, which rejects later locks.
+const captureLead = 900;
+
+const tileWidth = 720;
+const tileHeight = 1280;
+
+function wrap(value: string, chars: number) {
+  const lines: string[] = [];
+  for (const word of value.split(/\s+/).filter(Boolean)) {
+    const last = lines.length - 1;
+    if (last >= 0 && (lines[last] + ' ' + word).length <= chars) lines[last] += ' ' + word;
+    else lines.push(word.slice(0, chars));
+  }
+  return lines;
+}
+
+function bridgeReady(metadata: string | undefined) {
+  try { return JSON.parse(metadata || '{}')?.chert_bridge_ready === true; } catch { return false; }
+}
 
 function escapeXml(value: string) {
   return value.replace(/[<>&"']/g, character => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[character]!);
 }
 
-function spokenCode(value: string) {
-  const digits = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
-  return value.replace(/\b(zero|one|two|three|four|five|six|seven|eight|nine|oh)\b/g,
-    digit => String(digit === 'oh' ? 0 : digits.indexOf(digit))).replace(/[\s,-]/g, '');
-}
-
 export default defineAgent({
   entry: async context => {
     const key = process.env.REFEREE_KEY;
-    if (!key || !process.env.OPENAI_API_KEY) throw new Error('REFEREE_KEY and OPENAI_API_KEY are required');
+    // Speech uses OpenAI when OPENAI_API_KEY is set, otherwise Gemini with GEMINI_API_KEY.
+    const openai = Boolean(process.env.OPENAI_API_KEY);
+    const geminiKey = process.env.GEMINI_API_KEY;
+    if (!key || (!openai && !geminiKey)) throw new Error('REFEREE_KEY and GEMINI_API_KEY (or OPENAI_API_KEY) are required');
     const room = context.room;
     const cameras = new Map<number, Camera>();
     const videoTracks = new Map<number, string>();
     const audioTracks = new Map<number, string>();
     const stopReaders = new Map<string, () => void>();
-    const speaker = new TTS({ model: 'gpt-4o-mini-tts', voice: 'alloy' });
-    const listener = new STT({ model: 'gpt-4o-mini-transcribe', useRealtime: true, language: 'en' });
+    const autoSlots = new Map<string, number>();
+    const speaker: tts.TTS = openai
+      ? new TTS({ model: 'gpt-4o-mini-tts', voice: 'alloy' })
+      : new gemini.TTS({ apiKey: geminiKey, voiceName: 'Puck' });
+    const listener: stt.STT = openai
+      ? new STT({ model: 'gpt-4o-mini-transcribe', useRealtime: true, language: 'en' })
+      : new gemini.GeminiSTT({ apiKey: geminiKey, language: 'en-US', sampleRate: 16000, customVocabulary: vocabulary });
+    const listenRate = openai ? 24000 : 16000;
+    console.info('[envoggle] Speech:', openai ? 'OpenAI' : 'Gemini', 'Players:', autoAssign ? 'auto-assigned by participant' : 'from CHERT_PLAYER_* settings');
     const audio = new AudioSource(speaker.sampleRate, speaker.numChannels);
-    const video = new VideoSource(640, 480);
+    const video = new VideoSource(tileWidth, tileHeight);
     const output = new AbortController();
     let code = '';
     let states: State[] = [];
@@ -53,8 +88,13 @@ export default defineAgent({
     let ticking = false;
     let tickTimer: ReturnType<typeof setInterval> | undefined;
     let lastCountdown = '';
-    let notifiedMedia = false;
+    let creating = false;
+    let lastCreate = 0;
     let confirmationSlot: number | undefined;
+    let layoutSeen = 0;
+    let layoutChecked = 0;
+    let capturedRound = -1;
+    let captureTimer: ReturnType<typeof setTimeout> | undefined;
 
     async function api(slot: number, action: string, body?: object | Buffer, round?: number): Promise<State> {
       const query = new URLSearchParams({ slot: String(slot) });
@@ -65,6 +105,8 @@ export default defineAgent({
         body: Buffer.isBuffer(body) ? new Uint8Array(body) : body ? JSON.stringify(body) : undefined,
         signal: AbortSignal.timeout(3000),
       });
+      // The challenge is gone (expired or server restarted): make a new one on the next tick.
+      if (response.status === 404) code = '';
       if (!response.ok) throw new Error(`Referee request failed with HTTP ${response.status}`);
       return response.json();
     }
@@ -79,55 +121,125 @@ export default defineAgent({
       }).catch(() => { if (!output.signal.aborted) console.error('[envoggle] Referee speech failed'); });
     }
 
-    const fresh = (slot: number) => Date.now() - (cameras.get(slot)?.timestamp ?? 0) <= frameAge;
-    const readyMedia = () => slots.every(slot => fresh(slot) && audioTracks.has(slot));
+    // Split mode: one bridge feed showing the two-tile group layout (seen within the last 3 s).
+    // Both players then come from that feed and its mixed audio.
+    const split = () => autoAssign && videoTracks.size === 1 && cameras.has(0) && Date.now() - layoutSeen < 3000;
+    const freshCamera = (slot: number) => Date.now() - (cameras.get(slot)?.timestamp ?? 0) <= frameAge;
+    const fresh = (slot: number) => freshCamera(split() ? 0 : slot);
+    const readyMedia = () => split()
+      ? freshCamera(0) && audioTracks.size > 0
+      : slots.every(slot => fresh(slot) && audioTracks.has(slot));
+
+    // Checks at most twice a second whether the single feed shows two tiles: black gap between
+    // them, black window margins beside them, and picture in at least one tile.
+    async function checkLayout() {
+      const camera = cameras.get(0);
+      if (!autoAssign || videoTracks.size !== 1 || !camera || Date.now() - layoutChecked < 500) return;
+      layoutChecked = Date.now();
+      const rgba = camera.frame.convert(VideoBufferType.RGBA);
+      const { data, info } = await sharp(rgba.data, { raw: { width: rgba.width, height: rgba.height, channels: 4 } })
+        .resize(320, 180, { fit: 'fill' }).toColourspace('b-w').raw().toBuffer({ resolveWithObject: true });
+      const area = (x0: number, x1: number, y0: number, y1: number) => {
+        let sum = 0, squares = 0, count = 0;
+        for (let y = Math.round(y0 * info.height); y < Math.round(y1 * info.height); y++) {
+          for (let x = Math.round(x0 * info.width); x < Math.round(x1 * info.width); x++) {
+            const value = data[(y * info.width + x) * info.channels];
+            sum += value; squares += value * value; count++;
+          }
+        }
+        const mean = sum / count;
+        return { mean, spread: Math.sqrt(Math.max(0, squares / count - mean * mean)) };
+      };
+      const dark = (region: { mean: number; spread: number }) => region.mean < 12 && region.spread < 10;
+      const picture = (region: { mean: number; spread: number }) => region.mean > 12 || region.spread > 6;
+      const [left, right] = tiles.map(tile => area(tile.left + 0.01, tile.right - 0.01, tile.top + 0.01, tile.bottom - 0.01));
+      if (dark(area(0.495, 0.505, 0.30, 0.54)) && dark(area(0.26, 0.32, 0.30, 0.54)) && dark(area(0.68, 0.74, 0.30, 0.54))
+        && (picture(left) || picture(right))) {
+        if (!split()) console.info('[envoggle] Two-tile group layout found in a', rgba.width, 'x', rgba.height, 'feed');
+        layoutSeen = Date.now();
+      }
+    }
+
+    // A JPEG of the player's current view: their tile in split mode, otherwise their whole frame.
+    async function capture(slot: number) {
+      const splitting = split();
+      const camera = cameras.get(splitting ? 0 : slot)!;
+      const rgba = camera.frame.convert(VideoBufferType.RGBA);
+      const image = sharp(rgba.data, { raw: { width: rgba.width, height: rgba.height, channels: 4 } });
+      if (splitting) {
+        const tile = tiles[slot];
+        const left = Math.round(tile.left * rgba.width);
+        const top = Math.round(tile.top * rgba.height);
+        return image.extract({ left, top, width: Math.round(tile.right * rgba.width) - left, height: Math.round(tile.bottom * rgba.height) - top })
+          .resize({ width: 720, height: 720, fit: 'inside', withoutEnlargement: true }).jpeg().toBuffer();
+      }
+      return image.rotate([0, 90, 180, 270][camera.rotation] ?? 0).resize({ width: 720, height: 720, fit: 'inside' }).jpeg().toBuffer();
+    }
+
+    // Locks both players' current views just before time runs out. A player without a fresh view gets no lock.
+    async function captureAll(round: number) {
+      const state = states[0];
+      if (output.signal.aborted || state?.phase !== 'hunt' || state.round !== round) return;
+      await Promise.all(slots.map(async slot => {
+        if (!fresh(slot)) return;
+        try { await api(slot, 'lock', await capture(slot), round); }
+        catch { console.warn('[envoggle] Could not capture player', slot + 1); }
+      }));
+    }
+
+    // Creates and accepts a challenge for this call once both players are on camera, so no one
+    // has to read out an invite code.
+    async function createChallenge() {
+      const created = await fetch(`${address}/api/duels`, { method: 'POST', signal: AbortSignal.timeout(3000) });
+      if (!created.ok) throw new Error(`Challenge creation failed with HTTP ${created.status}`);
+      const { code: next } = await created.json() as { code: string };
+      const accepted = await fetch(`${address}/api/duels/${next}/accept`, { method: 'POST', signal: AbortSignal.timeout(3000) });
+      if (!accepted.ok) throw new Error(`Challenge acceptance failed with HTTP ${accepted.status}`);
+      code = next;
+      const state = await api(0, 'state');
+      say(state.retentionEnabled && !split()
+        ? 'Both players are in. Vision training is optional. Envoggle may license or sell confirmed images and labels to third parties for vision model training. Say start to play, or say start and save my frame to opt in.'
+        : 'Both players are in. Say start to play.');
+    }
 
     async function command(slot: number, transcript: string) {
       const raw = transcript.trim().replace(/[.!?]+$/, '');
       const words = raw.toLowerCase().replace(/[’']/g, '');
-      if (!code) {
-        const match = words.match(/^(?:code|challenge code|room code)\s+(?:is\s+)?(.+)$/);
-        const candidate = match && spokenCode(match[1]);
-        if (slot === 0 && candidate && /^\d{8}$/.test(candidate) && readyMedia()) {
-          code = candidate;
-          try {
-            const state = await api(0, 'state');
-            if (!state.accepted) throw new Error('Challenge pending');
-            say(state.retentionEnabled
-              ? 'Challenge joined. Vision training is optional. Envoggle may license or sell confirmed images and labels to third parties for vision model training. Say ready to play, or say ready and save my frame to opt in.'
-              : 'Challenge joined. Both players, say ready to play.');
-          } catch {
-            code = '';
-            say('That challenge was not found or is still awaiting acceptance. Check the code.');
-          }
-        }
+      if (!code) return;
+      const first = states[0];
+      if (!first) return;
+      // Either player starts the round (or a rematch) for both.
+      if (/\b(start|ready|rematch)\b/.test(words) && ['lobby', 'result', 'void'].includes(first.phase) && readyMedia()) {
+        const retain = !split() && words.includes('save my frame');
+        for (const player of slots) if (!first.ready[player]) await api(player, 'ready', { retain: retain && player === slot });
         return;
       }
-      const state = states[slot];
-      if (!state) return;
-      if (/^(ready|ready to play|ready and save my frame|rematch)$/.test(words) && readyMedia()) {
-        await api(slot, 'ready', { retain: words === 'ready and save my frame' });
-      } else if (/^lock (it )?in$/.test(words) && state.phase === 'hunt' && fresh(slot)) {
-        const camera = cameras.get(slot)!;
-        const rgba = camera.frame.convert(VideoBufferType.RGBA);
-        const rotation = [0, 90, 180, 270][camera.rotation] ?? 0;
-        const frame = await sharp(rgba.data, { raw: { width: rgba.width, height: rgba.height, channels: 4 } })
-          .rotate(rotation).resize({ width: 720, height: 720, fit: 'inside' }).jpeg().toBuffer();
-        await api(slot, 'lock', frame, state.round);
-        say(`Player ${slot + 1}, locked.`);
-      } else if (state.phase === 'confirm' && confirmationSlot === slot && state.guesses?.length && !state.confirmed) {
-        if (!state.options && /^(yes|correct|thats right)$/.test(words)) await api(slot, 'confirm', { action: 'accept' });
-        else if (!state.options && /^(no|incorrect)$/.test(words)) await api(slot, 'confirm', { action: 'reject' });
+      // Mixed call audio cannot tell the players apart, so in split mode answers go to the player being asked.
+      const answering = split() ? confirmationSlot : slot;
+      const state = answering === undefined ? undefined : states[answering];
+      if (answering !== undefined && state?.phase === 'confirm' && confirmationSlot === answering && state.guesses?.length && !state.confirmed) {
+        if (!state.options && /^(yes|correct|thats right)$/.test(words)) await api(answering, 'confirm', { action: 'accept' });
+        else if (!state.options && /^(no|incorrect)$/.test(words)) await api(answering, 'confirm', { action: 'reject' });
         else if (state.options) {
           const index = ['one', 'two', 'three'].indexOf(words.replace(/^option\s+/, '').replace(/^1$/, 'one').replace(/^2$/, 'two').replace(/^3$/, 'three'));
-          if (index >= 0 && state.guesses[index]) await api(slot, 'confirm', { action: 'choose', value: state.guesses[index] });
-          else if (words === 'none of these') say(`Player ${slot + 1}, say "my item is" and name it.`);
-          else if (words.startsWith('my item is ')) await api(slot, 'confirm', { action: 'custom', value: raw.slice(11) });
+          if (index >= 0 && state.guesses[index]) await api(answering, 'confirm', { action: 'choose', value: state.guesses[index] });
+          else if (words === 'none of these') say(`Player ${answering + 1}, say "my item is" and name it.`);
+          else if (words.startsWith('my item is ')) await api(answering, 'confirm', { action: 'custom', value: raw.slice(11) });
         }
       }
     }
 
     function slotFor(identity: string, track: string | undefined, kind: 'audio' | 'video') {
+      if (autoAssign) {
+        let slot = autoSlots.get(identity);
+        if (slot === undefined) {
+          slot = slots.find(free => ![...autoSlots.values()].includes(free));
+          if (slot === undefined) return undefined;
+          autoSlots.set(identity, slot);
+          console.info('[envoggle] Player', slot + 1, 'is participant', JSON.stringify(identity));
+        }
+        return slot;
+      }
       const matches = matchers.map((matcher, slot) => ({ matcher, slot })).filter(({ matcher }) =>
         matcher[kind] && matcher[kind] === track && (!matcher.identity || identity.startsWith(matcher.identity)));
       return matches.length === 1 ? matches[0].slot : undefined;
@@ -141,7 +253,10 @@ export default defineAgent({
       if (slot === undefined || stopReaders.has(publication.sid)) return;
       const sid = publication.sid;
       const mapped = kind === 'video' ? videoTracks : audioTracks;
-      if (mapped.has(slot)) return;
+      if (mapped.has(slot)) {
+        if (autoAssign) console.warn('[envoggle] Participant', JSON.stringify(participant.identity), 'sent a second', kind, 'track. If one participant carries both players, set the CHERT_PLAYER_* track names.');
+        return;
+      }
       mapped.set(slot, sid);
       if (kind === 'video') {
         const reader = new VideoStream(track).getReader();
@@ -160,7 +275,7 @@ export default defineAgent({
           stopReaders.delete(sid);
         });
       } else {
-        const reader = new AudioStream(track, { sampleRate: 24000, numChannels: 1 }).getReader();
+        const reader = new AudioStream(track, { sampleRate: listenRate, numChannels: 1 }).getReader();
         const transcription = listener.stream();
         stopReaders.set(sid, () => { void reader.cancel().catch(() => {}); transcription.close(); });
         void (async () => {
@@ -190,12 +305,26 @@ export default defineAgent({
     room.on(RoomEvent.TrackMuted, publication => {
       for (const [slot, sid] of videoTracks) if (sid === publication.sid) cameras.delete(slot);
     });
+    room.on(RoomEvent.ParticipantDisconnected, participant => { autoSlots.delete(participant.identity); });
+
+    // Chert ends a call that hears no agent audio within 10 s of bridge_ready, which chert dev
+    // signals in the room metadata. Greet once on that signal, never just because someone joined.
+    let greeted = false;
+    const greet = () => {
+      if (greeted || !bridgeReady(room.metadata)) return;
+      greeted = true;
+      say(readyMedia()
+        ? 'Envoggle referee here.'
+        : 'Envoggle referee here. Waiting for both players to join with their rear cameras on.');
+    };
+    room.on(RoomEvent.RoomMetadataChanged, greet);
 
     await context.connect(undefined, AutoSubscribe.SUBSCRIBE_ALL);
     const publisher = room.localParticipant;
     if (!publisher) throw new Error('Referee participant unavailable');
     await publisher.publishTrack(LocalAudioTrack.createAudioTrack('envoggle-referee-voice', audio), new TrackPublishOptions({ source: TrackSource.SOURCE_MICROPHONE }));
     await publisher.publishTrack(LocalVideoTrack.createVideoTrack('envoggle-scoreboard', video), new TrackPublishOptions({ source: TrackSource.SOURCE_CAMERA }));
+    greet();
 
     let still: VideoFrame | undefined;
     async function scoreboard() {
@@ -207,12 +336,12 @@ export default defineAgent({
         title = first.prompt;
         const seconds = Math.max(0, Math.ceil((first.deadline - Date.now()) / 1000));
         if (first.phase === 'hunt') {
-          detail = `${seconds}s · Say “Lock it in”`;
+          detail = `${seconds}s · Hold up your find`;
           if (seconds === 5 && lastCountdown !== `${first.round}:5`) {
             lastCountdown = `${first.round}:5`;
-            say('Five seconds.');
+            say('Five seconds. Hold your find up to the camera.');
           }
-          rows.push(...first.locked.map((locked, slot) => `Player ${slot + 1} · ${locked ? 'Locked' : 'Hunting'}`));
+          rows.push(...first.locked.map((locked, slot) => `Player ${slot + 1} · ${locked ? 'Captured' : 'Hunting'}`));
         } else if (first.results) {
           const [a, b] = first.results;
           detail = a.points === b.points ? 'Draw' : `Player ${a.points > b.points ? 1 : 2} wins`;
@@ -221,10 +350,28 @@ export default defineAgent({
       }
       const key = JSON.stringify([title, detail, rows]);
       if (key !== lastImageKey) {
-        const line = (value: string, y: number, size: number) => `<text x="38" y="${y}" fill="#F0F4F7" font-family="sans-serif" font-size="${size}">${escapeXml(value.slice(0, 52))}</text>`;
-        const svg = `<svg width="640" height="480"><rect width="640" height="480" fill="#111a25"/><rect width="640" height="12" fill="#A9EFC3"/>${line(title, 120, 38)}${line(detail, 196, 26)}${rows.map((row, index) => line(row, 280 + index * 72, 22)).join('')}</svg>`;
+        // Portrait tile. FaceTime crops it to fill the screen or a group tile, so all text stays
+        // centered inside the middle safe area (about 560 x 720 px) and wraps instead of running off.
+        const blocks = [
+          { lines: wrap(title, 16).slice(0, 2), size: 56, gap: 36, weight: 700 },
+          { lines: wrap(detail, 22).slice(0, 2), size: 40, gap: 44, weight: 400 },
+          ...rows.map(row => ({ lines: wrap(row, 32).slice(0, 2), size: 34, gap: 16, weight: 400 })),
+        ];
+        const bar = 40;
+        const height = bar + blocks.reduce((sum, item) => sum + item.lines.length * item.size * 1.2 + item.gap, 0);
+        let y = (tileHeight - height) / 2;
+        let body = `<rect x="${(tileWidth - 240) / 2}" y="${y}" width="240" height="8" fill="#A9EFC3"/>`;
+        y += bar;
+        for (const item of blocks) {
+          body += item.lines.map(part => {
+            y += item.size * 1.2;
+            return `<text x="${tileWidth / 2}" y="${y - item.size * 0.25}" text-anchor="middle" fill="#F0F4F7" font-family="Helvetica, Arial, sans-serif" font-weight="${item.weight}" font-size="${item.size}">${escapeXml(part)}</text>`;
+          }).join('');
+          y += item.gap;
+        }
+        const svg = `<svg width="${tileWidth}" height="${tileHeight}"><rect width="${tileWidth}" height="${tileHeight}" fill="#111a25"/>${body}</svg>`;
         const pixels = await sharp(Buffer.from(svg)).ensureAlpha().raw().toBuffer();
-        still = new VideoFrame(pixels, 640, 480, VideoBufferType.RGBA);
+        still = new VideoFrame(pixels, tileWidth, tileHeight, VideoBufferType.RGBA);
         lastImageKey = key;
       }
       if (still && !output.signal.aborted) video.captureFrame(still);
@@ -234,11 +381,16 @@ export default defineAgent({
       if (ticking || output.signal.aborted) return;
       ticking = true;
       try {
+        await checkLayout();
         if (!code) {
           if (readyMedia()) {
-            caption = 'Host: say “Code” and the invite code';
-            if (!notifiedMedia) say('Both cameras are ready. Player one, say code, followed by the invite code.');
-            notifiedMedia = true;
+            caption = 'Setting up the round';
+            if (!creating && Date.now() - lastCreate > 5000) {
+              creating = true;
+              lastCreate = Date.now();
+              void createChallenge().catch(() => console.warn('[envoggle] Could not create a challenge'))
+                .finally(() => { creating = false; });
+            }
           } else caption = 'Waiting for two player feeds';
         } else if (!pendingStatus) {
           pendingStatus = true;
@@ -249,7 +401,14 @@ export default defineAgent({
             if (first.phase === 'hunt' && !readyMedia()) await api(0, 'drop', {});
             let announcement = '';
             confirmationSlot = undefined;
-            if (first.phase === 'hunt') announcement = `${first.prompt}. Find the rarest thing you can. Go!`;
+            if (first.phase === 'hunt') {
+              announcement = `${first.prompt}. Find the rarest thing you can and hold it up when time runs out. Go!`;
+              if (capturedRound !== first.round) {
+                capturedRound = first.round;
+                clearTimeout(captureTimer);
+                captureTimer = setTimeout(() => void captureAll(first.round), Math.max(0, first.deadline - first.serverTime - captureLead));
+              }
+            }
             if (first.phase === 'confirm') {
               const player = next.find(state => !state.confirmed && state.guesses?.length);
               if (player?.guesses) {
@@ -260,7 +419,7 @@ export default defineAgent({
                   ? `Player ${player.slot + 1}. Is it ${choices}? Say the number, or say none of these.`
                   : `Player ${player.slot + 1}, is your item a ${player.guesses[0]}? Say yes or no.`;
               }
-            } else caption = first.phase === 'scoring' ? 'Scoring both finds' : 'Say “ready” to play';
+            } else caption = first.phase === 'scoring' ? 'Scoring both finds' : 'Say “start” to play';
             if (first.results) {
               const [a, b] = first.results;
               announcement = `Player one: ${a.label}, ${a.points} points. ${a.reason} Player two: ${b.label}, ${b.points} points. ${b.reason} ${a.points === b.points ? 'A draw.' : `Player ${a.points > b.points ? 'one' : 'two'} wins.`}`;
@@ -278,8 +437,24 @@ export default defineAgent({
     }
 
     tickTimer = setInterval(() => void tick().catch(() => console.error('[envoggle] Scoreboard update failed')), 200);
+    // Debug only: with ENVOGGLE_DEBUG_FRAMES set to a folder, save each player's current frame every 2 s.
+    const debugFrames = process.env.ENVOGGLE_DEBUG_FRAMES;
+    const debugTimer = debugFrames ? setInterval(() => {
+      const stamp = Date.now();
+      for (const slot of slots) {
+        if (fresh(slot)) void capture(slot).then(jpeg => writeFile(`${debugFrames}/${room.name}-p${slot + 1}-${stamp}.jpg`, jpeg)).catch(() => {});
+      }
+      const window = split() ? cameras.get(0) : undefined;
+      if (window) {
+        const rgba = window.frame.convert(VideoBufferType.RGBA);
+        void sharp(rgba.data, { raw: { width: rgba.width, height: rgba.height, channels: 4 } })
+          .resize({ width: 720 }).jpeg().toFile(`${debugFrames}/${room.name}-window-${stamp}.jpg`).catch(() => {});
+      }
+    }, 2000) : undefined;
+    context.addShutdownCallback(async () => clearInterval(debugTimer));
     context.addShutdownCallback(async () => {
       clearInterval(tickTimer);
+      clearTimeout(captureTimer);
       output.abort();
       stopReaders.forEach(stop => stop());
       if (code && states[0]?.phase === 'hunt') await api(0, 'drop', {}).catch(() => {});
