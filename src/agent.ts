@@ -464,7 +464,12 @@ export default defineAgent({
           spokenCaption = identifier;
           const [a, b] = first.results;
           const [one, two] = next.names;
-          say(`${one}: ${a.label}, ${a.points} points. ${a.reason} ${two}: ${b.label}, ${b.points} points. ${b.reason} ${a.points === b.points ? 'A draw.' : `${a.points > b.points ? one : two} wins.`}`);
+          const round = a.points === b.points ? 'This round is a draw.' : `${a.points > b.points ? one : two} wins this round.`;
+          const [x, y] = first.totalScores;
+          const total = first.completed
+            ? `Final score: ${one} ${x}, ${two} ${y}. ${x === y ? 'The match is a draw.' : `${x > y ? one : two} wins the match!`} Say start for a new match.`
+            : `Total so far: ${one} ${x}, ${two} ${y}. Say start for round ${first.stage + 1}.`;
+          say(`${one}: ${a.label}, ${a.points} points. ${a.reason} ${two}: ${b.label}, ${b.points} points. ${b.reason} ${round} ${total}`);
         }
       }
     }
@@ -509,7 +514,7 @@ export default defineAgent({
             if (first.phase === 'hunt' && !readyMedia()) await api(0, 'drop', {});
             let announcement = '';
             if (first.phase === 'hunt') {
-              announcement = `${first.prompt}. Find the rarest thing you can and hold it up when time runs out. Go!`;
+              announcement = `Round ${first.stage} of ${first.totalRounds}: ${first.prompt}. Find the rarest thing you can and hold it up when time runs out. Go!`;
               if (capturedRound !== first.round) {
                 capturedRound = first.round;
                 clearTimeout(captureTimer);

@@ -270,7 +270,7 @@ function render(current: State) {
   element('arena').hidden = false;
   element('feeds').hidden = current.phase === 'scoring' || current.phase === 'result';
   element('prompt').textContent = current.prompt;
-  element('scoreboard').textContent = `Round ${current.round} of ${current.totalRounds} · Total score: You ${current.totalScores[current.slot]} — Opponent ${current.totalScores[1 - current.slot]}`;
+  element('scoreboard').textContent = `Round ${current.stage} of ${current.totalRounds} · Total score: You ${current.totalScores[current.slot]} — Opponent ${current.totalScores[1 - current.slot]}`;
   updateClock();
   button('lock').hidden = current.phase !== 'hunt';
   button('lock').textContent = current.locked[current.slot] ? 'Replace locked frame' : 'Lock it in';
