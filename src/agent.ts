@@ -33,13 +33,15 @@ const matchers = [1, 2].map(number => ({
 // Without CHERT_PLAYER_* settings, each remote participant becomes the next free player slot.
 const autoAssign = !matchers.some(matcher => matcher.identity || matcher.audio || matcher.video);
 // Words the players say to the referee, to bias Gemini transcription.
-const vocabulary = ['Envoggle', 'start', 'start and save my frame', 'rematch', 'skip', 'my name is'];
+const vocabulary = ['Envoggle', 'start', 'continue', 'start and save my frame', 'rematch', 'skip', 'my name is'];
 // Lock both players this long before the server's deadline, which rejects later locks.
 const captureLead = 900;
 
 const tileWidth = TILE_WIDTH;
 const tileHeight = TILE_HEIGHT;
 const huntSeconds = 30;
+// How long the last round's reveal shows before the final scores screen.
+const FINAL_AFTER_MS = 12_000;
 
 // Names vs ordinary words, from the macOS dictionaries: a word counts as a name if it is a listed
 // first name or not an ordinary lowercase word at all.
@@ -103,6 +105,7 @@ export default defineAgent({
     let caption = 'Waiting for two player feeds';
     let spokenCaption = '';
     let lastImageKey = '';
+    let finalShown: { id: string; at: number } | undefined;
     let syncedAt = 0;
     let speech = Promise.resolve();
     let pendingStatus = false;
@@ -298,7 +301,7 @@ export default defineAgent({
       const first = states[0];
       if (!first) return;
       // Either player starts the round (or a rematch) for both.
-      if (/\b(start|ready|rematch)\b/.test(words) && ['lobby', 'result', 'void'].includes(first.phase) && readyMedia()) {
+      if (/\b(start|ready|rematch|continue|next)\b/.test(words) && ['lobby', 'result', 'void'].includes(first.phase) && readyMedia()) {
         const retain = !split() && words.includes('save my frame');
         for (const player of slots) if (!first.ready[player]) await api(player, 'ready', { retain: retain && player === slot });
         return;
@@ -437,6 +440,13 @@ export default defineAgent({
           countUp: countUp && countClock ? { elapsed: countClock.elapsed, targets: countUp.targets } : undefined };
       }
       if (first.phase === 'confirm') return { kind: 'message', title: 'Identifying finds', detail: 'One moment' };
+      if (first.results && first.completed) {
+        // After the last round: its reveal for a few seconds, then the final scores.
+        const id = `${code}:${first.round}`;
+        if (finalShown?.id !== id) finalShown = { id, at: Date.now() };
+        if (Date.now() - finalShown.at > FINAL_AFTER_MS) return { kind: 'final', names: players, history: first.history, totals: first.totalScores };
+        return { kind: 'reveal', names: players, prompt: first.prompt, results: first.results, photos, finds, last: true };
+      }
       if (first.results) return { kind: 'reveal', names: players, prompt: first.prompt, results: first.results, photos, finds };
       if (first.phase === 'void') return { kind: 'message', title: 'Round void', detail: `${first.message} Say “start” to try again.` };
       return { kind: 'ready', names: players, prompt: first.prompt };
@@ -468,7 +478,7 @@ export default defineAgent({
           const [x, y] = first.totalScores;
           const total = first.completed
             ? `Final score: ${one} ${x}, ${two} ${y}. ${x === y ? 'The match is a draw.' : `${x > y ? one : two} wins the match!`} Say start for a new match.`
-            : `Total so far: ${one} ${x}, ${two} ${y}. Say start for round ${first.stage + 1}.`;
+            : `Total so far: ${one} ${x}, ${two} ${y}. Say continue for round ${first.stage + 1}.`;
           say(`${one}: ${a.label}, ${a.points} points. ${a.reason} ${two}: ${b.label}, ${b.points} points. ${b.reason} ${round} ${total}`);
         }
       }

@@ -39,6 +39,8 @@ export class Duel {
   entries = empty();
   results?: [Result, Result];
   totalScores: [number, number] = [0, 0];
+  // Each scored round of the current match, for the final scores screen.
+  history: { prompt: string; points: [number, number] }[] = [];
   // Category for the current round (0-based). Only scored rounds advance it, so a void round
   // replays the same category; `round` still counts every attempt.
   stage = 0;
@@ -54,7 +56,7 @@ export class Duel {
     const entry = this.entries[slot];
     return {
       code: this.code, accepted: this.accepted, phase: this.phase, round: this.round,
-      stage: this.stage + 1, totalRounds: TOTAL_ROUNDS, totalScores: this.totalScores, completed: this.scoredRounds >= TOTAL_ROUNDS && this.phase === 'result',
+      stage: this.stage + 1, totalRounds: TOTAL_ROUNDS, totalScores: this.totalScores, history: this.history, completed: this.scoredRounds >= TOTAL_ROUNDS && this.phase === 'result',
       deadline: this.deadline, serverTime: Date.now(), prompt: rounds[this.stage].prompt, goal: rounds[this.stage].goal, ready: this.players.map(player => player.ready),
       locked: this.entries.map(find => Boolean(find.frame)), message: this.message,
       guesses: entry.done ? [] : entry.guesses, options: entry.options, confirmed: entry.done,
@@ -72,6 +74,7 @@ export class Duel {
     if (this.scoredRounds >= TOTAL_ROUNDS) {
       this.scoredRounds = 0;
       this.totalScores = [0, 0];
+      this.history = [];
     }
     this.stage = this.scoredRounds;
     this.entries = empty();
@@ -157,6 +160,7 @@ export class Duel {
       const results: [Result, Result] = [first, second];
       this.results = results;
       results.forEach((result, slot) => { this.totalScores[slot] += result.points; });
+      this.history.push({ prompt: rounds[this.stage].prompt, points: [results[0].points, results[1].points] });
       this.scoredRounds++;
       this.phase = 'result';
       results.forEach((result, slot) => {

@@ -11,7 +11,7 @@ test('plays every category once, replays a void round, and a start after the las
   process.env.GEMINI_API_KEY = 'test';
   delete process.env.ANTHROPIC_API_KEY;
   mock.timers.enable({ apis: ['setTimeout', 'Date'] });
-  mock.method(globalThis, 'fetch', async () => json({ items: [{ label: 'zorb', points: 300, reason: 'Odd.', contour: [], holes: [] }], rotation: 0, safeToRetain: false }));
+  mock.method(globalThis, 'fetch', async () => json({ items: [{ label: 'zorb', points: 298, reason: 'Odd.', contour: [], holes: [] }], rotation: 0, safeToRetain: false }));
   const duel = new Duel('ROUNDS01');
   duel.accepted = true;
   const start = () => { duel.ready(0, false); duel.ready(1, false); };
@@ -31,7 +31,7 @@ test('plays every category once, replays a void round, and a start after the las
   await play(); prompts.push(duel.state(0).prompt);
   assert.deepEqual(prompts, rounds.map(round => round.prompt));
   assert.equal(duel.state(0).completed, true);
-  assert.deepEqual(duel.state(0).totalScores, [300 * TOTAL_ROUNDS, 0]);
+  assert.deepEqual(duel.state(0).totalScores, [298 * TOTAL_ROUNDS, 0]);
   start();
   assert.equal(duel.phase, 'hunt');
   assert.equal(duel.state(0).stage, 1);

@@ -30,7 +30,8 @@ export type View =
   | { kind: 'ready'; names: string[]; prompt: string }
   | { kind: 'hunt'; names: string[]; prompt: string; seconds: number; total: number; locked: boolean[] }
   | (Finds & { kind: 'scoring'; focus: number; scan?: number; countUp?: { elapsed: number; targets: (number | null)[] } })
-  | (Finds & { kind: 'reveal'; results: Result[] });
+  | (Finds & { kind: 'reveal'; results: Result[]; last?: boolean })
+  | { kind: 'final'; names: string[]; history: { prompt: string; points: number[] }[]; totals: number[] };
 
 export function escapeXml(value: string) {
   return value.replace(/[<>&"']/g, character => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[character]!);
@@ -69,7 +70,7 @@ const logo = (cx: number, top: number) =>
   text('ENVOGGLE', TILE_WIDTH / 2 + 30, top + 1, 22, { weight: 700, fill: muted, spacing: 7 });
 
 function heading(label: string, title: string, size: number) {
-  const lines = wrap(title, Math.floor(560 / (size * 0.55)));
+  const lines = wrap(title, Math.floor(560 / (size * 0.55)), 3);
   return {
     height: 34 + lines.length * size * 1.05,
     draw: (top: number) => text(label, TILE_WIDTH / 2, top, 24, { weight: 700, fill: muted, spacing: 5 }) +
@@ -154,7 +155,7 @@ function findCards(view: Extract<View, { kind: 'scoring' | 'reveal' }>) {
   return stack([
     { height: 112, draw: top => text(view.prompt.toUpperCase(), TILE_WIDTH / 2, top, 22, { weight: 700, fill: muted, spacing: 4 }) + text(headline, TILE_WIDTH / 2, top + 36, 76, { weight: 800, fill: winner < 0 ? ink : COLORS[winner] }) },
     cards,
-    { height: 30, draw: top => results ? text('Say “start” to continue', TILE_WIDTH / 2, top, 28, { fill: muted }) : '' },
+    { height: 30, draw: top => results ? text(view.kind === 'reveal' && view.last ? 'Final scores next' : 'Say “continue” for the next round', TILE_WIDTH / 2, top, 28, { fill: muted }) : '' },
   ], 26);
 }
 
@@ -221,6 +222,29 @@ export function renderTile(view: View) {
         ring(view.seconds, view.total, lime, 340, 170, 'seconds'),
         players(view.names, view.locked.map(locked => locked ? 'Captured' : 'Hunting')),
       ], 40);
+  } else if (view.kind === 'final') {
+    // Final scores: one row per round, then the totals, with the match winner on top.
+    const [a, b] = view.totals;
+    const winner = a === b ? -1 : a > b ? 0 : 1;
+    const row = (label: string, points: number[], top: number, big: boolean) =>
+      wrap(label, big ? 16 : 22).map((line, index) => text(line, 100, top + index * 30, big ? 32 : 26, { weight: big ? 800 : 400, fill: big ? ink : soft, anchor: 'start' })).join('') +
+      points.map((value, slot) => text(String(value), 448 + slot * 128, top, big ? 40 : 30, { weight: 800, fill: big && winner === slot ? COLORS[slot] : ink })).join('');
+    body = stack([
+      { height: 24, draw: top => logo(center, top) },
+      { height: 112, draw: top => text('FINAL SCORES', center, top, 24, { weight: 700, fill: muted, spacing: 5 }) + text(winner < 0 ? 'Tied match' : `${view.names[winner]} wins`, center, top + 36, 76, { weight: 800, fill: winner < 0 ? ink : COLORS[winner] }) },
+      {
+        height: 70 + view.history.length * 96 + 90,
+        draw: top => {
+          let out = `<rect x="80" y="${top}" width="560" height="${70 + view.history.length * 96 + 90}" fill="${card}"/>`;
+          out += view.names.map((name, slot) => `<rect x="${384 + slot * 128}" y="${top}" width="128" height="8" fill="${COLORS[slot]}"/>` + text(name.slice(0, 7), 448 + slot * 128, top + 24, 26, { weight: 800, fill: COLORS[slot] })).join('');
+          view.history.forEach((round, index) => { out += row(round.prompt, round.points, top + 84 + index * 96, false); });
+          const totalTop = top + 70 + view.history.length * 96 + 22;
+          out += `<rect x="100" y="${totalTop - 18}" width="520" height="2" fill="#2A3646"/>` + row('Total', view.totals, totalTop, true);
+          return out;
+        },
+      },
+      { height: 30, draw: top => text('Say “start” for a new match', center, top, 28, { fill: muted }) },
+    ], 40);
   } else body = findCards(view);
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${TILE_WIDTH}" height="${TILE_HEIGHT}"><rect width="${TILE_WIDTH}" height="${TILE_HEIGHT}" fill="${ground}"/>${body}</svg>`;
 }

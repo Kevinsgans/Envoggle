@@ -14,7 +14,7 @@ export const blue = {
   prompt: 'Rare things that are blue',
   goal: 'Find the rarest blue thing you can',
   rule: 'The real object must be visibly and prominently blue. A tiny blue logo or a depiction on a screen does not qualify.',
-  measure: `how rare it is: 1 is something found everywhere, ${MAX_POINTS} is almost impossible to find during a 30-second campus hunt`,
+  measure: `how rare it is to have one at hand on a college campus: 1 is something nearly everyone carries, ${MAX_POINTS} is almost impossible to find during a 30-second hunt. Ordinary personal items (pens, bottles, clothes) stay low; craft, hobby, specialist or unusual items score well above them, and most real finds land between 150 and 850`,
   tiers: ['Common', 'Uncommon', 'Rare', 'Super rare', 'Ultra rare'],
   items: [
     // Common (1 - 200)
@@ -38,6 +38,7 @@ export const blue = {
 
     // Uncommon (201 - 400)
     { name: 'jacket', aliases: ['coat'], tier: RARITY.uncommon, points: 230 },
+    { name: 'chip bag', aliases: ['bag of chips', 'snack bag', 'doritos'], tier: RARITY.uncommon, points: 263 },
     { name: 'umbrella', aliases: [], tier: RARITY.uncommon, points: 260 },
     { name: 'headphones', aliases: ['earbuds', 'headset'], tier: RARITY.uncommon, points: 290 },
     { name: 'blanket', aliases: ['throw blanket'], tier: RARITY.uncommon, points: 320 },
@@ -52,6 +53,7 @@ export const blue = {
 
     // Rare (401 - 600)
     { name: 'stapler', aliases: [], tier: RARITY.rare, points: 440 },
+    { name: 'construction paper', aliases: ['blue construction paper', 'craft paper', 'card stock', 'cardstock'], tier: RARITY.rare, points: 547 },
     { name: 'watering can', aliases: [], tier: RARITY.rare, points: 480 },
     { name: 'yoga mat', aliases: ['exercise mat'], tier: RARITY.rare, points: 520 },
     { name: 'bucket', aliases: ['pail'], tier: RARITY.rare, points: 560 },

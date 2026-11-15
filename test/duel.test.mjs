@@ -65,7 +65,8 @@ test('scans the last locked frames and focuses the item that wins after applying
     assert.deepEqual(duel.state(1).presentation.finds, [{ contour, holes: [hole], rotation: 90 }, { rotation: 180 }]);
     mock.timers.tick(FOCUS_MS);
     await settle();
-    assert.deepEqual(duel.state(0).presentation.countUp, { startedAt: Date.now(), targets: [870, 15] });
+    // Round scores are nudged off multiples of 5 (precise() in src/judge.ts).
+    assert.deepEqual(duel.state(0).presentation.countUp, { startedAt: Date.now(), targets: [869, 13] });
     assert.equal(duel.phase, 'scoring');
     for (const slot of [0, 1]) assert.equal(duel.state(slot).results, undefined);
     mock.timers.tick(COUNT_UP_MS - 1);
@@ -75,7 +76,7 @@ test('scans the last locked frames and focuses the item that wins after applying
     await settle();
     assert.equal(duel.phase, 'result');
     assert.equal(duel.confirm(0, 'accept'), false);
-    assert.deepEqual(duel.results.map(result => [result.label, result.points, result.unlisted]), [['bandoneon', 870, true], ['pen', 15, false]]);
+    assert.deepEqual(duel.results.map(result => [result.label, result.points, result.unlisted]), [['bandoneon', 869, true], ['pen', 13, false]]);
     assert.equal(captures.length, 2);
     assert.equal(captures.includes(first.toString()), false);
     assert.deepEqual(duel.frame(0), final);
@@ -112,10 +113,10 @@ test('keeps scanning while the model is slow and gives a missed lock zero points
     assert.deepEqual(duel.state(0).presentation.finds, [undefined, undefined]);
     mock.timers.tick(FOCUS_MS);
     await settle();
-    assert.deepEqual(duel.state(0).presentation.countUp.targets, [null, 1000]);
+    assert.deepEqual(duel.state(0).presentation.countUp.targets, [null, 997]);
     mock.timers.tick(COUNT_UP_MS);
     await settle();
-    assert.deepEqual(duel.results.map(result => [result.label, result.points]), [['No find', 0], ['grandfather clock', 1000]]);
+    assert.deepEqual(duel.results.map(result => [result.label, result.points]), [['No find', 0], ['grandfather clock', 997]]);
     duel.ready(0, false);
     duel.ready(1, false);
     duel.lock(1, final, 2);
